@@ -34,7 +34,7 @@ namespace HallowVPN.Tests
             Dir = Path.Combine(Path.GetTempPath(), "HallowVPNTest" + Process.GetCurrentProcess().Id);
             Environment.SetEnvironmentVariable("HALLOW_VPN_TESTDIR", Dir);
             Fx = Path.Combine(Path.GetDirectoryName(typeof(Run).Assembly.Location), "fixtures");
-            try { Parsing(); Targets(); Picking(); Cache(); SplitTests(); Scripts(); AccountTests(); KillSwitchTests(); CaTests(); GameTests(); TailscaleTests(); ModeTests(); Misc(); RealReadOnly(); PipeAndApp(); }
+            try { Parsing(); Targets(); Picking(); Cache(); SplitTests(); Scripts(); AccountTests(); KillSwitchTests(); CaTests(); GameTests(); TailscaleTests(); ModeTests(); Misc(); V11.All(Ok, Dir, Fx); RealReadOnly(); PipeAndApp(); }
             catch (Exception e) { fail++; Console.WriteLine("FAIL exception: " + e); }
             try { if (Directory.Exists(Dir)) Directory.Delete(Dir, true); } catch { }
             Console.WriteLine(pass + " passed, " + fail + " failed");
@@ -332,7 +332,7 @@ namespace HallowVPN.Tests
                 string r = null; for (int i = 0; i < 40 && (r == null || !r.StartsWith("ok")); i++) { Thread.Sleep(250); r = Cmd(exe, dir, "ping"); }
                 Ok(r == "ok {\"app\":\"VPN\",\"version\":\"" + Program.Version + "\"}", "ping: " + r);
                 r = Cmd(exe, dir, "status");
-                foreach (var k in new[] { "version", "updated", "connected", "connecting", "server", "country", "protocol", "killSwitch", "splitMode", "since" }) Ok(r.Contains("\"" + k + "\":"), "status has \"" + k + "\"");
+                foreach (var k in new[] { "version", "updated", "connected", "connecting", "server", "country", "protocol", "killSwitch", "splitMode", "since", "p2p", "leakCheck", "leakCheckAt", "setupDone", "untrustedNetwork" }) Ok(r.Contains("\"" + k + "\":"), "status has \"" + k + "\"");
                 Ok(r.Contains("\"connected\":false") && r.Contains("\"protocol\":\"IKEv2\"") && r.Contains("\"splitMode\":\"all\"") && r.Contains("\"account\":false"), "status: not connected, IKEv2, everything through the VPN, no account");
                 Ok(Cmd(exe, dir, "connect fastest").StartsWith("error Add your Nord service credentials"), "connect without an account: refused");
                 Ok(Cmd(exe, dir, "test-account me@example.com pw").StartsWith("error That looks like your Nord login"), "the Nord login is refused");
@@ -378,6 +378,53 @@ namespace HallowVPN.Tests
                 Ok(Cmd(exe, dir, "open servers") == "ok" && Cmd(exe, dir, "open nowhere").StartsWith("error"), "open <page>");
                 Ok(Cmd(exe, dir, "disconnect") == "ok", "disconnect");
                 r = Until(exe, dir, "connected", "false"); Ok(r.Contains("\"connected\":false") && r.Contains("\"server\":null"), "disconnected");
+                // ---- 1.1: DNS in the (test) phonebook, leak test, P2P, health, auto-connect, Fix my connection, setup
+                Cmd(exe, dir, "test-split all");
+                Ok(Cmd(exe, dir, "connect p2p") == "ok connecting", "connect p2p over the pipe");
+                r = Until(exe, dir, "connecting", "false");
+                Ok(r.Contains("\"connected\":true") && r.Contains("\"p2p\":true") && Cmd(exe, dir, "test-current").EndsWith(" p2p"), "on a P2P server: status says p2p true");
+                Ok(Cmd(exe, dir, "test-pbk") == "ok []", "the test phonebook's entry now has Nord's DNS and the VPN first");
+                Ok(File.Exists(Path.Combine(dir, "rasphone.pbk.bak")) && File.ReadAllText(Path.Combine(dir, "rasphone.pbk")).Contains("IpDnsAddress=103.86.96.100"), "the phonebook was backed up before the change (test folder only)");
+                r = Until(exe, dir, "leakCheck", "\"ok\"");
+                Ok(r.Contains("\"leakCheck\":\"ok\"") && Regex.IsMatch(r, "\"leakCheckAt\":\"\\d{4}-") && !r.Contains("203.0.113.84") && !r.Contains("198.51.100"), "leak test ok in status, with a time - never the IPs");
+                Cmd(exe, dir, "test-dnsbad on"); Cmd(exe, dir, "leaktest"); r = Until(exe, dir, "leakCheck", "\"warn\"");
+                Ok(r.Contains("\"leakCheck\":\"warn\""), "another network's DNS asked first: warn");
+                Cmd(exe, dir, "test-dnsbad off"); Cmd(exe, dir, "test-ipv6 on"); Thread.Sleep(300); Cmd(exe, dir, "leaktest"); r = Until(exe, dir, "leakCheck", "\"warn\"");
+                Ok(r.Contains("\"leakCheck\":\"warn\""), "IPv6 internet without the kill switch: warn");
+                Cmd(exe, dir, "test-ipv6 off"); Thread.Sleep(300); Cmd(exe, dir, "leaktest"); Until(exe, dir, "leakCheck", "\"ok\"");
+                r = Cmd(exe, dir, "test-realip"); Ok(r.StartsWith("ok 198.51.100.23") && !Cmd(exe, dir, "status").Contains("198.51.100.23") && !File.ReadAllText(Path.Combine(dir, "status.json")).Contains("198.51.100.23"), "real IP only on request (fake), never in status: " + r);
+                r = Cmd(exe, dir, "test-health"); Ok(Regex.IsMatch(r, "^ok \\d+ \\d+ \\d+$"), "health: bytes up / down and a live ping: " + r);
+                r = Cmd(exe, dir, "diagnose"); Ok(r.StartsWith("ok {\"steps\":[{\"id\":\"account\",\"status\":\"ok\"}") && r.Contains("\"id\":\"profile\",\"status\":\"ok\"") && r.Contains("\"id\":\"blockers\""), "Fix my connection over the pipe: " + r);
+                Ok(Cmd(exe, dir, "test-repair profile") == "error Disconnect first - the connection is in use.", "recreating the profile waits until disconnected");
+                Cmd(exe, dir, "disconnect"); Until(exe, dir, "connected", "false");
+                Ok(Cmd(exe, dir, "test-repair profile") == "ok" && Cmd(exe, dir, "test-pbk") == "ok []", "profile recreated (fake layer, test phonebook) with Nord's DNS again");
+                r = Cmd(exe, dir, "test-calls"); Ok(r.Contains("remove profile"), "it removed and set up the per-user profile");
+                // auto-connect on untrusted Wi-Fi
+                Ok(Cmd(exe, dir, "test-autonet on") == "ok True", "auto-connect on untrusted Wi-Fi: on");
+                Cmd(exe, dir, "test-net open Cafe Guest"); r = Until(exe, dir, "connected", "true");
+                Ok(r.Contains("\"connected\":true") && r.Contains("\"untrustedNetwork\":true") && !r.Contains("Cafe"), "joined an open Wi-Fi: connected by itself (the Wi-Fi name isn't in status)");
+                Cmd(exe, dir, "disconnect"); Until(exe, dir, "connected", "false"); Cmd(exe, dir, "test-net open Cafe Guest"); Cmd(exe, dir, "test-tick 6"); Thread.Sleep(300);
+                Ok(Cmd(exe, dir, "status").Contains("\"connected\":false"), "disconnected by hand on that network: it stays off");
+                Ok(Cmd(exe, dir, "test-trust Home-5G") == "ok Home-5G", "a Wi-Fi name trusted");
+                Cmd(exe, dir, "test-net wifi Home-5G"); Thread.Sleep(300); r = Cmd(exe, dir, "status");
+                Ok(r.Contains("\"connected\":false") && r.Contains("\"untrustedNetwork\":false"), "trusted Wi-Fi: no auto-connect");
+                Cmd(exe, dir, "test-net wired"); Thread.Sleep(300); Ok(Cmd(exe, dir, "status").Contains("\"connected\":false"), "wired (trusted by default): no auto-connect");
+                Cmd(exe, dir, "test-gamemode pause"); Cmd(exe, dir, "test-game Delta Force");
+                Cmd(exe, dir, "test-net wifi Airport"); Thread.Sleep(300);
+                Ok(Cmd(exe, dir, "status").Contains("\"connected\":false"), "a game runs with \"pause\": untrusted Wi-Fi waits, nothing dialled");
+                Cmd(exe, dir, "test-game none"); r = Until(exe, dir, "connected", "true");
+                Ok(r.Contains("\"connected\":true"), "the game closed: connected on the untrusted Wi-Fi");
+                Cmd(exe, dir, "test-gamemode off"); Cmd(exe, dir, "test-autonet off"); Cmd(exe, dir, "disconnect"); Until(exe, dir, "connected", "false");
+                // setup test (step 3) and Windows' last error
+                Cmd(exe, dir, "test-dialerror Windows doesn't trust the server's certificate (error 13801). Install NordVPN's root certificate on the Account page.");
+                Ok(Cmd(exe, dir, "test-setuptest").StartsWith("ok running"), "setup step 3: test connection to Fastest");
+                Thread.Sleep(600); Ok(Cmd(exe, dir, "test-setup") == "ok True fail", "a failed test says fail");
+                r = Cmd(exe, dir, "diagnose"); Ok(r.Contains("\"id\":\"lasterror\",\"status\":\"warn\""), "Fix my connection explains the last Windows error (13801)");
+                Cmd(exe, dir, "test-dialerror none"); Cmd(exe, dir, "test-setuptest"); Thread.Sleep(600);
+                Ok(Cmd(exe, dir, "test-setup") == "ok True pass", "then it passes");
+                r = Cmd(exe, dir, "status"); Ok(r.Contains("\"setupDone\":true") && r.Contains("\"autoConnect\":false"), "status: setupDone, autoConnect");
+                Cmd(exe, dir, "disconnect"); Until(exe, dir, "connected", "false");
+                Ok(Cmd(exe, dir, "status").Contains("\"p2p\":false") && Cmd(exe, dir, "status").Contains("\"leakCheck\":null"), "not connected: p2p false, no leak result");
                 Ok(Cmd(exe, dir, "invoke nothing") == "error unknown item" && Cmd(exe, dir, "frobnicate") == "error unknown command", "unknown item / command");
                 Ok(Cmd(exe, dir, "test-autostart on") == "ok True" && Cmd(exe, dir, "test-autostart off") == "ok False", "Start with Windows (test file, never the real Run key)");
                 r = Cmd(exe, dir, "test-calls"); Ok(!r.Contains("s3cretPass"), "no call ever carried the password");

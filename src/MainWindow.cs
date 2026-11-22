@@ -21,14 +21,17 @@ namespace HallowVPN
         Border content; TextBlock sayText, meter; Button updateBtn; DispatcherTimer sayTimer, rebuildTimer;
         public bool Exiting;
         public static readonly string[][] Pages = {
-            new[] { "connect", "Connection", "power-off" }, new[] { "servers", "Servers", "globe" }, new[] { "split", "Split tunnel", "code-branch" },
-            new[] { "gaming", "Gaming", "gamepad" }, new[] { "killswitch", "Kill switch", "shield-halved" }, new[] { "home", "Home (Tailscale)", "house" },
-            new[] { "account", "Account", "key" }, new[] { "settings", "Settings", "gear" } };
+            new[] { "connect", "Connection", "power-off" }, new[] { "setup", "First-run setup", "list-check" }, new[] { "servers", "Servers", "globe" }, new[] { "split", "Split tunnel", "code-branch" },
+            new[] { "gaming", "Gaming", "gamepad" }, new[] { "auto", "Auto-connect", "wifi" }, new[] { "killswitch", "Kill switch", "shield-halved" }, new[] { "home", "Home (Tailscale)", "house" },
+            new[] { "account", "Account", "key" }, new[] { "fix", "Fix my connection", "stethoscope" }, new[] { "settings", "Settings", "gear" } };
         public static string PageId(string s)
         {
             var v = (s ?? "").Trim().ToLowerInvariant().Replace(" ", "");
             if (v == "connection" || v == "status") v = "connect"; if (v == "kill" || v == "firewall") v = "killswitch"; if (v == "tailscale") v = "home"; if (v == "game" || v == "games") v = "gaming";
             if (v == "splittunnel" || v == "splittunneling" || v == "splittunnelling") v = "split";
+            if (v == "firstrun" || v == "first-runsetup" || v == "wizard" || v == "start") v = "setup";
+            if (v == "fixmyconnection" || v == "diagnose" || v == "diagnosis" || v == "checks") v = "fix";
+            if (v == "autoconnect" || v == "auto-connect" || v == "wifi" || v == "networks") v = "auto";
             return Pages.Any(p => p[0] == v) ? v : null;
         }
 
@@ -41,8 +44,14 @@ namespace HallowVPN
             Rebuild();
             Action changed = () => Dispatcher.BeginInvoke(new Action(SoonRebuild));
             c.Changed += changed;
-            Closed += (s, e) => { c.Changed -= changed; c.MainClosed(); };
+            Action health = () => Dispatcher.BeginInvoke(new Action(UpdateHealth));
+            c.HealthChanged += health;
+            healthTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };   // never faster; idle while minimised or on another page
+            healthTimer.Tick += (s, e) => { if (page == "connect" && IsVisible && WindowState != WindowState.Minimized && c.Phase == Phase.On) c.PollHealth(); };
+            if (!Snap.On) healthTimer.Start();
+            Closed += (s, e) => { c.Changed -= changed; c.HealthChanged -= health; healthTimer.Stop(); c.MainClosed(); };
         }
+        DispatcherTimer healthTimer;
         // a burst of changes = one rebuild (never while typing in a field of the open page)
         void SoonRebuild()
         {
@@ -50,7 +59,7 @@ namespace HallowVPN
             if (rebuildTimer == null) { rebuildTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) }; rebuildTimer.Tick += (s, e) => { rebuildTimer.Stop(); if (!Typing()) BuildPage(); else UpdateMeter(); }; }
             rebuildTimer.Stop(); rebuildTimer.Start();
         }
-        bool Typing() { var f = System.Windows.Input.Keyboard.FocusedElement as DependencyObject; return (f is TextBox || f is PasswordBox) && IsKeyboardFocusWithin && (page == "split" || page == "account" || page == "gaming" || page == "servers"); }
+        bool Typing() { var f = System.Windows.Input.Keyboard.FocusedElement as DependencyObject; return (f is TextBox || f is PasswordBox) && IsKeyboardFocusWithin && (page == "split" || page == "account" || page == "gaming" || page == "servers" || page == "setup" || page == "auto"); }
 
         public void Rebuild()
         {
@@ -67,6 +76,7 @@ namespace HallowVPN
             foreach (var p in Pages)
             {
                 var id = p[0];
+                if (id == "setup" && c.S.SetupDone && page != "setup") continue;
                 var b = new Button { Style = Ui.S("Nav"), Content = Icons.WithText(p[2], p[1], 14, Ui.R("Text")), Margin = new Thickness(8, 0, 8, 0) };
                 b.Click += (s, e) => Show(id);
                 DockPanel.SetDock(b, Dock.Top); side.Children.Add(b); nav[id] = b;
@@ -121,6 +131,9 @@ namespace HallowVPN
                 case "home": el = HomePage(); break;
                 case "account": el = AccountPage(); break;
                 case "settings": el = SettingsPage(); break;
+                case "setup": el = SetupPage(); break;
+                case "auto": el = AutoPage(); break;
+                case "fix": el = FixPage(); break;
                 default: el = ConnectPage(); break;
             }
             content.Child = el;
@@ -201,6 +214,8 @@ namespace HallowVPN
             if (!c.HasAccount) { sp.Children.Add(Ui.Note("Add your Nord SERVICE credentials first. They're on Nord's website (NordVPN > Set up NordVPN manually) and are not your Nord login.", "Amber", "AmberBg")); sp.Children.Add(Wrap(Go("account", "Open Account"))); }
             if (c.CaChecked && !c.CaInstalled) { sp.Children.Add(Ui.Note("Windows doesn't trust Nord's servers yet: NordVPN's root certificate isn't installed. Without it, connecting fails with error 13801. Install it on the Account page (Windows asks for permission).", "Amber", "AmberBg")); }
             if (c.Home.Current != null) sp.Children.Add(Ui.Note("Home mode is on: your traffic goes through " + c.Home.Current.Name + " (Tailscale). Stop it on the Home page to use Nord.", "Lilac", "LilacBg"));
+            if (!c.S.SetupDone && c.Phase != Phase.On) { sp.Children.Add(Ui.Note("First time? The setup walks you through it: your service credentials, Nord's certificate, then a test connection.", "Lilac", "LilacBg")); sp.Children.Add(Wrap(Go("setup", "Open the setup"))); sp.Children.Add(new Border { Height = 10 }); }
+            if (c.Ipv6 && !c.KillSwitchOn && c.S.SplitMode != Split.Only) sp.Children.Add(Ui.Note("This PC has IPv6 internet. Nord's IKEv2 carries IPv4 only, so IPv6 traffic can go around the VPN. The kill switch blocks public IPv6 (Kill switch page).", "Amber", "AmberBg"));
 
             // the status card
             var card = new Grid(); card.ColumnDefinitions.Add(new ColumnDefinition()); card.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -232,6 +247,7 @@ namespace HallowVPN
                 g.Children.Add(KV("Public IP", c.IpLoading ? "checking…" : c.PublicIp ?? "-", (c.IpProtected == true ? "protected, " : "") + (c.IpCountry != null ? c.IpCountry + " · " : "") + "Nord's IP check (api.nordvpn.com), only while connected"));
                 if (c.Current != null && c.Current.Load >= 0) g.Children.Add(KV("Load", Ui.Row(Ui.LoadBar(c.Current.Load, 80), Pad(Ui.Num("  " + c.Current.Load + " %", 12.5)))));
                 if (c.Current != null && c.Current.Ping >= 0) g.Children.Add(KV("Ping", Fmt.Ms(c.Current.Ping), "measured by this PC before connecting"));
+                g.Children.Add(HealthRows());
                 left.Children.Add(g);
             }
             card.Children.Add(left);
@@ -244,6 +260,7 @@ namespace HallowVPN
                 var cb = full(Ui.Btn("Connect", () => Act(c.Connect(t, true)), true)); cb.Content = "Connect · " + TargetLabel(t); cb.IsEnabled = can; btns.Children.Add(cb);
                 if (t.Kind != "fastest") { var f = full(Ui.Btn("Fastest server", () => Act(c.Connect(new Target { Kind = "fastest" }, true)))); f.IsEnabled = can; btns.Children.Add(f); }
                 var gb = full(Ui.Btn("Best for gaming", () => Act(c.Connect(new Target { Kind = "gaming" }, true)))); gb.IsEnabled = can && t.Kind != "gaming"; btns.Children.Add(gb);
+                var pb = full(Ui.Btn("Best for torrents", () => Act(c.Connect(new Target { Kind = "p2p" }, true)))); pb.IsEnabled = can && t.Kind != "p2p"; btns.Children.Add(pb);
                 btns.Children.Add(full(Ui.Btn("Pick a server", () => Show("servers"))));
             }
             else if (c.Phase == Phase.Connecting) btns.Children.Add(full(Ui.Btn("Cancel", () => c.Cancel())));
@@ -255,7 +272,8 @@ namespace HallowVPN
             }
             Grid.SetColumn(btns, 1); card.Children.Add(btns);
             sp.Children.Add(Ui.Card(card, 20));
-            if (c.LastError != null) { var e = Ui.Note(c.LastError, "Red", "RedBg"); e.Margin = new Thickness(0, 10, 0, 0); sp.Children.Add(e); }
+            if (c.LastError != null) { var e = Ui.Note(c.LastError, "Red", "RedBg"); e.Margin = new Thickness(0, 10, 0, 0); sp.Children.Add(e); if (c.Phase == Phase.Off) sp.Children.Add(Wrap(Go("fix", "Fix my connection"))); }
+            if (c.Phase == Phase.On) LeakCard(sp);
 
             // favourites
             if (c.S.Favourites.Count > 0)
@@ -299,6 +317,7 @@ namespace HallowVPN
             switch (t.Kind)
             {
                 case "gaming": return "best for gaming";
+                case "p2p": return "best for torrents";
                 case "country": { var co = c.Book.Countries.FirstOrDefault(x => x.Code == t.Value); return "fastest in " + (co != null ? co.Name : t.Value); }
                 case "server": { var f = c.S.Favourites.FirstOrDefault(x => x.Host == t.Value); return f != null && f.Name != null ? f.Name : t.Value.Split('.')[0]; }
             }
@@ -324,7 +343,7 @@ namespace HallowVPN
                 var b = new Button { Style = Ui.S("Nav"), Content = Icons.WithText(icon, label, 13, Ui.R("Text")), Tag = sel == id ? "on" : null, Padding = new Thickness(12, 7, 12, 7) };
                 b.Click += (s, e) => { sel = id; BuildPage(); }; picks.Children.Add(b);
             };
-            pick("fastest", "Fastest (recommended)", "bolt"); pick("gaming", "Best for gaming", "gamepad"); pick("favourites", "Favourites (" + c.S.Favourites.Count + ")", "star");
+            pick("fastest", "Fastest (recommended)", "bolt"); pick("gaming", "Best for gaming", "gamepad"); pick("p2p", "Best for torrents (P2P)", "share-nodes"); pick("favourites", "Favourites (" + c.S.Favourites.Count + ")", "star");
             DockPanel.SetDock(picks, Dock.Top); left.Children.Add(picks);
             var cl = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
             Action fillCountries = () =>
@@ -350,12 +369,13 @@ namespace HallowVPN
             var top = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
             var refresh = Ui.Btn("Refresh", () => LoadServers(true)); refresh.Margin = new Thickness(8, 0, 0, 0); refresh.VerticalAlignment = VerticalAlignment.Top; refresh.IsEnabled = sel != "favourites" && !loading;
             DockPanel.SetDock(refresh, Dock.Right); top.Children.Add(refresh);
-            string title = sel == "fastest" ? "Fastest" : sel == "gaming" ? "Best for gaming" : sel == "favourites" ? "Favourites" : "";
+            string title = sel == "fastest" ? "Fastest" : sel == "gaming" ? "Best for gaming" : sel == "p2p" ? "Best for torrents" : sel == "favourites" ? "Favourites" : "";
             if (sel.StartsWith("country:")) { var co = c.Book.Countries.FirstOrDefault(x => "country:" + x.Code == sel); title = co != null ? co.Name : sel.Substring(8); }
             var tsp = new StackPanel();
             tsp.Children.Add(Ui.T(title, 20, true));
             string about = sel == "fastest" ? "Nord's recommended IKEv2 servers for where you are, ordered by the ping this PC measures plus their load."
                 : sel == "gaming" ? "Nearby, quiet servers: under 40 % load, then the lowest ping this PC measures. What \"Best for gaming\" connects to."
+                : sel == "p2p" ? "Nord's P2P servers (the servers Nord allows torrenting on), ordered by ping plus load. What \"Best for torrents\" and Hallow Torrents' \"connect p2p\" use."
                 : sel == "favourites" ? "Servers you starred. Click the star on any server to add it."
                 : "Nord's recommended IKEv2 servers in this country, ordered by ping plus load.";
             tsp.Children.Add(Ui.Muted(about, 12));
@@ -398,8 +418,8 @@ namespace HallowVPN
             var name = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
             var nl = new StackPanel { Orientation = Orientation.Horizontal };
             nl.Children.Add(new TextBlock { Text = s.Name ?? s.Host, FontWeight = FontWeights.SemiBold });
-            if (best) { var p = Ui.Pill(sel == "gaming" ? "best for gaming" : "fastest", "AccentBrush", "AccentGlow"); p.Margin = new Thickness(8, 0, 0, 0); nl.Children.Add(p); }
-            if (s.P2P) { var p = Ui.Pill("P2P", "Lilac", "LilacBg"); p.Margin = new Thickness(6, 0, 0, 0); nl.Children.Add(p); }
+            if (best) { var p = Ui.Pill(sel == "gaming" ? "best for gaming" : sel == "p2p" ? "best for torrents" : "fastest", "AccentBrush", "AccentGlow"); p.Margin = new Thickness(8, 0, 0, 0); nl.Children.Add(p); }
+            if (s.P2P && sel != "p2p") { var p = Ui.Pill("P2P", "Lilac", "LilacBg"); p.Margin = new Thickness(6, 0, 0, 0); nl.Children.Add(p); }
             name.Children.Add(nl);
             name.Children.Add(Ui.Muted(s.Host + (s.City != null ? " · " + s.City : ""), 11.5));
             Grid.SetColumn(name, 2); g.Children.Add(name);
@@ -426,8 +446,8 @@ namespace HallowVPN
                 int cid = 0;
                 if (key.StartsWith("country:")) { var co = c.Book.FindCountry(key.Substring(8)); cid = co == null ? -1 : co.Id; }
                 if (cid < 0) { l = new List<Server>(); err = "Nord's country list doesn't have that country."; }
-                else { l = c.Book.List(cid, force, out err); c.Book.Measure(l.OrderBy(x => x.Load).ToList(), Snap.On ? 40 : 16); }
-                Action fin = () => { loading = false; shown = l; shownKey = key; listError = err; listFetched = c.Book.Fetched(ServerBook.Key(cid)); if (page == "servers" && !Snap.On) BuildPage(); };
+                else { l = c.Book.List(cid, force, out err, key == "p2p"); c.Book.Measure(l.OrderBy(x => x.Load).ToList(), Snap.On ? 40 : 16); }
+                Action fin = () => { loading = false; shown = l; shownKey = key; listError = err; listFetched = c.Book.Fetched(key == "p2p" ? "p2p" : ServerBook.Key(cid)); if (page == "servers" && !Snap.On) BuildPage(); };
                 if (Snap.On) fin(); else Dispatcher.BeginInvoke(fin);
             };
             if (Snap.On) work(); else new Thread(() => work()) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "servers" }.Start();
@@ -615,16 +635,7 @@ namespace HallowVPN
             ca.Children.Add(Ui.T(!c.CaChecked ? "Checking…" : c.CaInstalled ? "Installed - Windows trusts Nord's servers" : "Not installed", 14, true, c.CaInstalled ? Ui.R("Green") : c.CaChecked ? Ui.R("Amber") : null, 4));
             ca.Children.Add(Ui.Muted("Windows' IKEv2 client only connects to servers whose certificate it trusts. Nord's servers use NordVPN's own root certificate (\"NordVPN Root CA\"), which Windows doesn't include. Installing it puts it in this computer's Trusted Root store - a system change, so Windows asks for permission (UAC). Hallow VPN downloads it from Nord (downloads.nordcdn.com) only when you click, checks it really is NordVPN's root certificate and shows its fingerprint before anything is installed.", 12, 10));
             var crow = new WrapPanel();
-            if (!c.CaInstalled) crow.Children.Add(Ui.Btn("Install Nord's certificate (asks Windows)", () =>
-            {
-                Say("Getting NordVPN's root certificate from downloads.nordcdn.com...");
-                c.CaFetchAsync((err, thumb) =>
-                {
-                    if (err != null) { Say(err); Dialogs.Info(this, "Not installed", err); return; }
-                    if (!Dialogs.Confirm(this, "Install NordVPN's root certificate?", "Subject: NordVPN Root CA (self-signed, a certificate authority)\nSHA-1 fingerprint: " + thumb + "\n\nIt goes into this computer's Trusted Root store so Windows accepts Nord's IKEv2 servers. Windows will ask for permission (UAC). You can remove it here any time.", "Install (asks Windows)", false)) return;
-                    c.CaChangeAsync(true, e2 => Say(e2 ?? "NordVPN's root certificate is installed."));
-                });
-            }, true));
+            if (!c.CaInstalled) crow.Children.Add(Ui.Btn("Install Nord's certificate (asks Windows)", InstallCa, true));
             else crow.Children.Add(Ui.Btn("Remove Nord's certificate (asks Windows)", () =>
             {
                 if (!Dialogs.Confirm(this, "Remove NordVPN's root certificate?", "Windows will ask for permission (UAC). After that, Windows won't trust Nord's servers and connecting fails until it's installed again.", "Remove (asks Windows)", true)) return;
@@ -653,8 +664,7 @@ namespace HallowVPN
             sp.Children.Add(Ui.Switch("Use the one Hallow icon (Hallow Hub's tray menu lists Hallow VPN)", c.S.UseHallowIcon, on => { c.S.UseHallowIcon = on; c.S.Save(); c.CheckHost(); }));
             sp.Children.Add(Section("Connection"));
             sp.Children.Add(Ui.Switch("Reconnect by itself when the connection drops", c.S.AutoReconnect, on => { c.S.AutoReconnect = on; c.S.Save(); c.WriteStatus(); }));
-            sp.Children.Add(Ui.Switch("Connect when Hallow VPN starts", c.S.ConnectOnStart, on => { c.S.ConnectOnStart = on; c.S.Save(); }));
-            sp.Children.Add(Ui.Switch("Start Hallow VPN with Windows (in the tray)", c.StartsWithWindows(), on => c.SetStartWithWindows(on)));
+            sp.Children.Add(Ui.Muted("Connecting at sign-in and on untrusted Wi-Fi is on the Auto-connect page.", 12, 6));
             sp.Children.Add(Ui.Muted("Quitting Hallow VPN leaves the VPN as it is (Windows keeps the connection; you'll see \"Hallow VPN\" in Windows' network list). Auto-reconnect and game awareness only work while Hallow VPN runs.", 12, 6));
             sp.Children.Add(Section("Windows' VPN profile"));
             sp.Children.Add(Ui.Muted("Hallow VPN keeps one VPN connection called \"Hallow VPN\" for your Windows user (IKEv2, EAP, credentials not saved by Windows). It's created on the first connect and updated when you change server or split tunnel.", 12, 6));
@@ -665,6 +675,8 @@ namespace HallowVPN
             });
             prof.IsEnabled = c.Phase == Phase.Off;
             sp.Children.Add(Wrap(prof));
+            sp.Children.Add(Section("Help"));
+            sp.Children.Add(Wrap(Go("setup", "Open the first-run setup"), Go("fix", "Fix my connection")));
             sp.Children.Add(Section("Hallow VPN"));
             sp.Children.Add(Wrap(Ui.Btn("Check for updates", () => c.CheckForUpdate(true)), Ui.Btn("Open data folder", () => { if (!Snap.On) try { System.IO.Directory.CreateDirectory(VpnSettings.Dir); Process.Start("explorer.exe", "\"" + VpnSettings.Dir + "\""); } catch { } })));
             sp.Children.Add(Ui.Muted("v" + Program.Version + ". Talks only to api.nordvpn.com (server list, and the IP check while connected), the servers it pings, downloads.nordcdn.com (only when you install Nord's certificate) and GitHub (updates). Crash reports stay on this PC and never contain your credentials.", 11.5, 0));

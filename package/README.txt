@@ -8,14 +8,14 @@ HOW TO INSTALL
 2. Right-click the zip > Extract All
 3. Double-click INSTALL.bat (no admin needed)
 
-FIRST TIME
-1. Account page: paste your Nord SERVICE credentials. They are NOT your Nord login: on
-   nordaccount.com go to NordVPN > "Set up NordVPN manually" and copy the Service credentials.
-   They're kept encrypted (Windows DPAPI) for your Windows user only, never logged.
-2. Account page: if Windows doesn't trust Nord's servers yet, click "Install Nord's certificate".
-   Hallow VPN downloads NordVPN's root certificate from Nord, checks it and shows its fingerprint;
-   Windows then asks for permission (UAC) because it's a system change.
-3. Connection page: Connect (fastest), Best for gaming, a country, a server or a favourite.
+FIRST TIME (the First-run setup screen walks you through it)
+1. Paste your Nord SERVICE credentials. They are NOT your Nord login: on nordaccount.com go to
+   NordVPN > "Set up NordVPN manually" and copy the Service credentials. They're kept encrypted
+   (Windows DPAPI) for your Windows user only, never logged.
+2. Click "Install Nord's certificate". Hallow VPN downloads NordVPN's root certificate from Nord,
+   checks it and shows its fingerprint; Windows then asks for permission (UAC) because it's a
+   system change. Without it, connecting fails with error 13801.
+3. Click "Test connection to Fastest". Pass = you're done. Fail = click "Fix my connection".
 
 WHAT IT DOES
 - Servers from Nord's public server list (IKEv2 only), cached and refreshed at most every 3 hours,
@@ -44,6 +44,17 @@ GOOD TO KNOW (honest limits)
 - Quitting Hallow VPN leaves the VPN connection as it is (Windows keeps it).
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
+
+WHAT'S NEW IN 1.1 - first connect just works, and nothing leaks
+- First-run setup: credentials, Nord's certificate, then a test connection - each with a green
+  tick or a plain-English fix.
+- Fix my connection: checks everything in order and offers the repairs that need no admin.
+- DNS leak protection: the "Hallow VPN" connection uses NordVPN's DNS and asks it first (no admin;
+  only that entry of your own phonebook is changed, after a backup).
+- Leak test while connected (public IP, DNS, an IPv6 warning). Your real IP only when you click.
+- Auto-connect: at sign-in, and on Wi-Fi you don't trust (open Wi-Fi is never trusted).
+- Best for torrents: Nord's P2P servers ("connect p2p" for Hallow Torrents).
+- Connection health: data up / down, live ping, and a hint when the server is slow.
 
 WHAT'S NEW IN 1.0
 - The first version: Nord servers (fastest, by country, favourites, best for gaming), connect

@@ -45,6 +45,7 @@ namespace HallowVPN
         {
             return "[" + string.Join(",", Countries.Select(c => "{\"id\":" + c[0] + ",\"name\":\"" + c[1] + "\",\"code\":\"" + c[2] + "\",\"serverCount\":" + (40 + (int)c[0] % 300) + ",\"cities\":[]}")) + "]";
         }
+        public const string RealIpJson = "{\"ip\":\"198.51.100.23\",\"country\":\"United Kingdom\",\"isp\":\"Example Broadband\",\"protected\":false}";
         public const string IpJson = "{\"ip\":\"203.0.113.84\",\"country\":\"Netherlands\",\"country_code\":\"NL\",\"city\":\"Amsterdam\",\"isp\":\"Example Hosting\",\"protected\":true}";
         public static FakeNordApi Api()
         {
@@ -52,6 +53,7 @@ namespace HallowVPN
             a.Add("/v1/helpers/ips/insights", IpJson);
             a.Add("/v1/servers/countries", CountriesJson());
             foreach (var c in Countries) a.Add("filters[country_id]=" + c[0] + "&", ServersJson((int)c[0]));
+            a.Add("filters[servers_groups][identifier]=" + Nord.P2PGroup, ServersJson(0));   // the P2P ones are kept by ServerBook
             a.Add("/v1/servers/recommendations", ServersJson(0));
             return a;
         }

@@ -49,8 +49,16 @@ namespace HallowVPN
         [DataMember] public string LastUpdateCheck;
         [DataMember] public string LastCrashShown;
         [DataMember] public bool TrayHintShown;
+        // 1.1
+        [DataMember] public bool SetupDone;                    // the first successful connect happened (the setup screen stops opening)
+        [DataMember] public bool AutoConnectUntrusted;         // connect by itself on Wi-Fi that isn't trusted (open Wi-Fi is never trusted)
+        [DataMember] public bool TrustWired = true;            // wired connections count as trusted
+        [DataMember] public List<string> TrustedNetworks;      // Wi-Fi names (SSIDs) only - never keys or passwords
+        [DataMember] public int LastDialCode;                  // Windows' error number of the last failed connect (for "Fix my connection")
+        [DataMember] public string LastDialWhen;
+        [DataMember] public string LastServer;                 // the last server connected to (for the checks and recreating the profile)
 
-        [OnDeserializing] void Defaults(StreamingContext c) { UseHallowIcon = true; UseHallowAccent = true; Look = "follow"; AutoReconnect = true; LastTarget = "fastest"; SplitMode = Split.All; GameMode = Games.ModeOff; HomeAllowLan = true; }
+        [OnDeserializing] void Defaults(StreamingContext c) { UseHallowIcon = true; UseHallowAccent = true; Look = "follow"; AutoReconnect = true; LastTarget = "fastest"; SplitMode = Split.All; GameMode = Games.ModeOff; HomeAllowLan = true; TrustWired = true; }
 
         public static VpnSettings Load()
         {
@@ -74,6 +82,9 @@ namespace HallowVPN
             SplitRoutes = SplitRoutes.Select(Split.Normalize).Where(x => x != null).Distinct().Take(Split.MaxRoutes).ToList();
             if (ExtraGames == null) ExtraGames = new List<string>();
             ExtraGames.RemoveAll(string.IsNullOrWhiteSpace);
+            if (TrustedNetworks == null) TrustedNetworks = new List<string>();
+            TrustedNetworks = TrustedNetworks.Where(x => !string.IsNullOrEmpty(x) && x.Length <= 32).Distinct().Take(50).ToList();
+            if (LastServer != null && !Nord.ValidHost(LastServer)) LastServer = null;
             if (!Split.Modes.Contains(SplitMode)) SplitMode = Split.All;
             if (GameMode != Games.ModePause && GameMode != Games.ModeLowPing) GameMode = Games.ModeOff;
             if (Target.Parse(LastTarget) == null) LastTarget = "fastest";

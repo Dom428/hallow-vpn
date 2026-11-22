@@ -59,6 +59,7 @@ namespace HallowVPN
             var v = (s ?? "").Trim(); var l = v.ToLowerInvariant();
             if (l == "" || l == "fastest" || l == "quick") return new Target { Kind = "fastest" };
             if (l == "gaming" || l == "game" || l == "best-for-gaming") return new Target { Kind = "gaming" };
+            if (l == "p2p" || l == "torrents" || l == "torrent" || l == "best-for-torrents") return new Target { Kind = "p2p" };
             if (l.StartsWith("country:")) { var c = v.Substring(8).Trim().ToUpperInvariant(); return Regex.IsMatch(c, "^[A-Z]{2}$") ? new Target { Kind = "country", Value = c } : null; }
             if (l.StartsWith("server:")) l = l.Substring(7).Trim();
             if (Regex.IsMatch(l, "^[a-z]{2}$")) return new Target { Kind = "country", Value = l.ToUpperInvariant() };
@@ -98,9 +99,11 @@ namespace HallowVPN
     {
         public const string Api = "https://api.nordvpn.com";
         public static bool ValidHost(string h) { return h != null && h.Length <= 60 && Regex.IsMatch(h, "^[a-z0-9]+(-[a-z0-9]+)*\\.nordvpn\\.com$"); }
-        public static string RecommendationsUrl(int countryId, int limit)
+        // Nord's P2P server group (from /v1/servers/groups: id 15, identifier "legacy_p2p", title "P2P")
+        public const string P2PGroup = "legacy_p2p";
+        public static string RecommendationsUrl(int countryId, int limit, bool p2p = false)
         {
-            return Api + "/v1/servers/recommendations?filters[servers_technologies][identifier]=ikev2" + (countryId > 0 ? "&filters[country_id]=" + countryId : "") + "&limit=" + limit;
+            return Api + "/v1/servers/recommendations?filters[servers_technologies][identifier]=ikev2" + (p2p ? "&filters[servers_groups][identifier]=" + P2PGroup : "") + (countryId > 0 ? "&filters[country_id]=" + countryId : "") + "&limit=" + limit;
         }
         public static string CountriesUrl { get { return Api + "/v1/servers/countries"; } }
         public static string IpUrl { get { return Api + "/v1/helpers/ips/insights"; } }
@@ -254,9 +257,9 @@ namespace HallowVPN
 
         // a server list: from the cache while it's younger than 3 h; refreshed from Nord otherwise (force = the Refresh button, at most
         // every 5 minutes). error = why Nord couldn't be asked (the cached list is still returned when there is one).
-        public List<Server> List(int countryId, bool force, out string error)
+        public List<Server> List(int countryId, bool force, out string error, bool p2p = false)
         {
-            error = null; var key = Key(countryId); CachedList c; DateTime? at;
+            error = null; var key = p2p ? "p2p" : Key(countryId); if (p2p) countryId = 0; CachedList c; DateTime? at;
             lock (gate) { cache.Lists.TryGetValue(key, out c); at = c == null ? null : When(c.Fetched); }
             var now = Now(); DateTime last;
             bool stale = c == null || at == null || now - at.Value >= MaxAge || now < at.Value;
@@ -266,7 +269,8 @@ namespace HallowVPN
                 try
                 {
                     lastFetch[key] = now; Interlocked.Increment(ref Fetches);
-                    var l = Nord.ParseServers(api.Get(Nord.RecommendationsUrl(countryId, countryId > 0 ? 25 : 40)));
+                    var l = Nord.ParseServers(api.Get(Nord.RecommendationsUrl(countryId, countryId > 0 || p2p ? 25 : 40, p2p)));
+                    if (p2p) l = l.Where(s => s.P2P).ToList();   // only servers Nord itself lists in the P2P group
                     if (l.Count == 0) throw new FormatException("Nord sent an empty list");
                     lock (gate) { c = new CachedList { Fetched = now.ToString("o"), Servers = l }; cache.Lists[key] = c; }
                     SaveCache();

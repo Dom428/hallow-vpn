@@ -30,6 +30,9 @@ namespace HallowVPN
         string HangUp();                             // null = it's down
         bool IsUp();
         string RemoveProfile();
+        int LastCode { get; }                         // Windows' error number of the last failed dial (0 = none)
+        bool Stats(out long sent, out long received, out TimeSpan duration);   // RasGetConnectionStatistics while up
+        string PbkPath { get; }                       // the phonebook file the profile lives in (null = none)
     }
 
     public static class VpnScript
@@ -131,6 +134,8 @@ namespace HallowVPN
         // ras.h packs its structures to 4 bytes (pshpack4): RASDIALPARAMSW = 2112 bytes on x64 (Windows 7+ layout), RASCONNW = 1388
         [DllImport("rasapi32.dll", CharSet = CharSet.Unicode)] public static extern int RasDial(IntPtr ext, string phonebook, ref RASDIALPARAMS p, int notifierType, IntPtr notifier, out IntPtr h);
         [DllImport("rasapi32.dll", CharSet = CharSet.Unicode)] public static extern int RasHangUp(IntPtr h);
+        // RAS_STATS: 15 DWORDs (size, bytes sent, bytes received, frames..., errors..., compression, bps, connect duration in ms)
+        [DllImport("rasapi32.dll")] public static extern int RasGetConnectionStatistics(IntPtr h, [In, Out] int[] stats);
         [DllImport("rasapi32.dll", CharSet = CharSet.Unicode)] public static extern int RasEnumConnections([In, Out] RASCONN[] conns, ref int cb, ref int count);
 
         // this user's active RAS connections (entry name, handle); read-only. error = the RAS error number (0 = fine)
@@ -164,6 +169,16 @@ namespace HallowVPN
         public string RemoveProfile() { HangUp(); return VpnScript.Run(VpnScript.Remove()); }
         IntPtr Handle() { int e; var c = Ras.Active(out e).FirstOrDefault(x => x.Key == VpnScript.Entry); return c.Value; }
         public bool IsUp() { return Handle() != IntPtr.Zero; }
+        public int LastCode { get; private set; }
+        public string PbkPath { get { return Phonebook; } }
+        public bool Stats(out long sent, out long received, out TimeSpan duration)
+        {
+            sent = received = -1; duration = TimeSpan.Zero;
+            var h = Handle(); if (h == IntPtr.Zero) return false;
+            var st = new int[15]; st[0] = 60;
+            if (Ras.RasGetConnectionStatistics(h, st) != 0) return false;
+            sent = (uint)st[1]; received = (uint)st[2]; duration = TimeSpan.FromMilliseconds((uint)st[14]); return true;
+        }
         public string Dial(string host, Credentials c)
         {
             if (!Nord.ValidHost(host)) return "That isn't a Nord server name.";
@@ -171,7 +186,8 @@ namespace HallowVPN
             IntPtr h;
             int err = Ras.RasDial(IntPtr.Zero, File.Exists(Phonebook) ? Phonebook : null, ref p, 0, IntPtr.Zero, out h);
             p.szPassword = null;
-            if (err == 0) return null;
+            if (err == 0) { LastCode = 0; return null; }
+            LastCode = err;
             if (h != IntPtr.Zero) { Ras.RasHangUp(h); WaitDown(h, 3000); }
             return Ras.Explain(err);
         }
@@ -194,21 +210,29 @@ namespace HallowVPN
     public class FakeVpn : IVpn
     {
         public bool Profile, Up; public ProfileSpec Spec; public string Host;
-        public string DialError, ProfileError; public int DialMs = 50;
+        public string DialError, ProfileError; public int DialMs = 50; public string PbkPath { get; set; } public int LastCode { get; set; }
+        public long Sent = 1843200, Received = 52428800; public DateTime UpAt;
+        public bool Stats(out long sent, out long received, out TimeSpan duration) { sent = Sent; received = Received; duration = Up ? DateTime.Now - UpAt : TimeSpan.Zero; if (Up) { Sent += 20480; Received += 409600; } return Up; }
         public readonly List<string> Calls = new List<string>();
         void Call(string s) { lock (Calls) Calls.Add(s); }
         public bool ProfileExists() { return Profile; }
-        public string ApplyProfile(ProfileSpec spec) { VpnScript.Profile(spec); Call("profile " + spec.Key); if (ProfileError != null) return ProfileError; Profile = true; Spec = spec; return null; }
+        public string ApplyProfile(ProfileSpec spec)
+        {
+            VpnScript.Profile(spec); Call("profile " + spec.Key); if (ProfileError != null) return ProfileError; Profile = true; Spec = spec;
+            // like Add-/Set-VpnConnection: the entry appears in the (test) phonebook; Set-VpnConnection changes only the server
+            if (PbkPath != null) { var t = Pbk.Read(PbkPath); File.WriteAllText(PbkPath, t == null || Pbk.Section(t, VpnScript.Entry) == null ? Pbk.SampleEntry(VpnScript.Entry, spec.Host) : System.Text.RegularExpressions.Regex.Replace(t, "PhoneNumber=.*", "PhoneNumber=" + spec.Host)); }
+            return null;
+        }
         public string Dial(string host, Credentials c)
         {
             Call("dial " + host + " as " + (c == null ? "nobody" : Credentials.Mask(c.User)));
             Thread.Sleep(DialMs);
-            if (DialError != null) return DialError;
-            Up = true; Host = host; return null;
+            if (DialError != null) { var m = System.Text.RegularExpressions.Regex.Match(DialError, "error ([0-9]+)"); LastCode = m.Success ? int.Parse(m.Groups[1].Value) : 0; return DialError; }
+            Up = true; Host = host; UpAt = DateTime.Now; LastCode = 0; return null;
         }
         public string HangUp() { Call("hangup"); Up = false; return null; }
         public bool IsUp() { return Up; }
-        public string RemoveProfile() { Call("remove profile"); Up = false; Profile = false; return null; }
+        public string RemoveProfile() { Call("remove profile"); Up = false; Profile = false; if (PbkPath != null && File.Exists(PbkPath)) File.WriteAllText(PbkPath, ""); return null; }
         public void Drop() { Up = false; Call("(dropped)"); }   // tests: the connection drops by itself
     }
 }

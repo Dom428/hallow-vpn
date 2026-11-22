@@ -23,6 +23,10 @@ namespace HallowVPN
             { "Remove", "xmark" }, { "Check again", "arrows-rotate" }, { "Use this", "house" }, { "Stop using it", "xmark" }, { "Check for updates", "arrows-rotate" },
             { "Open data folder", "folder-open" }, { "Show details", "eye" }, { "Open folder", "folder-open" }, { "OK", "check" }, { "Update", "download" },
             { "Open Account", "key" }, { "Connected", "circle-check" }, { "Remove the Windows VPN profile", "xmark" },
+            { "Fix my connection", "stethoscope" }, { "Open the setup", "list-check" }, { "Open the first-run setup", "list-check" }, { "Run the checks", "stethoscope" }, { "Trust this network", "wifi" },
+            { "Don't trust this network", "xmark" }, { "Show my real IP", "location-dot" }, { "Run the leak test again", "magnifying-glass" }, { "Recreate the VPN profile", "wrench" },
+            { "Refresh the server list", "arrows-rotate" }, { "Best for torrents", "share-nodes" }, { "Switch to the fastest", "bolt" }, { "Test connection to Fastest", "power-off" }, { "Test again", "arrows-rotate" },
+            { "Open Home", "house" }, { "Open the Connection page", "power-off" },
         };
         static readonly string[][] Prefixes = { new[] { "Update to", "download" }, new[] { "Connect", "power-off" }, new[] { "Install", "shield-halved" }, new[] { "Remove", "xmark" }, new[] { "Disconnect", "link-slash" } };        public static string ForLabel(string label)
         {
