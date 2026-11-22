@@ -216,6 +216,13 @@ namespace HallowVPN
             if (c.CaChecked && !c.CaInstalled) { sp.Children.Add(Ui.Note("Windows doesn't trust Nord's servers yet: NordVPN's root certificate isn't installed. Without it, connecting fails with error 13801. Install it on the Account page (Windows asks for permission).", "Amber", "AmberBg")); }
             if (c.Home.Current != null) sp.Children.Add(Ui.Note("Home mode is on: your traffic goes through " + c.Home.Current.Name + " (Tailscale). Stop it on the Home page to use Nord.", "Lilac", "LilacBg"));
             if (!c.S.SetupDone && c.Phase != Phase.On) { sp.Children.Add(Ui.Note("First time? The setup walks you through it: your service credentials, Nord's certificate, then a test connection.", "Lilac", "LilacBg")); sp.Children.Add(Wrap(Go("setup", "Open the setup"))); sp.Children.Add(new Border { Height = 10 }); }
+            // Nord's IKEv2 login (EAP) only works with a login Windows saved itself - one sign-in through Windows' own dialog (1.2.5)
+            if (c.HasAccount && c.Phase == Phase.Off && c.ProtoFor(false) != Controller.ProtoWg && (Snap.On ? !c.S.SetupDone : !Ras.HasWindowsLogin(WindowsVpn.Phonebook)))
+            {
+                sp.Children.Add(Ui.Note("One-time step: Windows has to remember your Nord login itself (Nord's sign-in type only works that way). Click below, paste the same service username and password into Windows' box, keep \"Save\" ticked and click Connect. After that Hallow VPN connects, reconnects and auto-connects by itself. Windows keeps it encrypted for your Windows user.", "Amber", "AmberBg"));
+                var sign = Ui.Btn("Sign in through Windows", () => { Say("Getting the \"Hallow VPN\" connection ready…"); c.RepairAsync("profile", e => { if (e != null) { Say(e); return; } Say(Ras.WindowsSignIn(WindowsVpn.Phonebook) ?? "Windows' sign-in is open (it may be behind this window - check the taskbar): paste the service username and password, tick Save (Me only), click Connect."); }); }, true);
+                sp.Children.Add(Wrap(sign)); sp.Children.Add(new Border { Height = 10 });
+            }
             if (c.Ipv6 && !c.KillSwitchOn && c.S.SplitMode != Split.Only) sp.Children.Add(Ui.Note("This PC has IPv6 internet. Nord's IKEv2 carries IPv4 only, so IPv6 traffic can go around the VPN. The kill switch blocks public IPv6 (Kill switch page).", "Amber", "AmberBg"));
 
             // the status card

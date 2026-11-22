@@ -49,6 +49,11 @@ GOOD TO KNOW (honest limits)
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
 
+WHAT'S NEW IN 1.2.5 - Nord accepts the login
+- Fixed error 691 with correct credentials: Nord's login is EAP, and for EAP Windows only uses a login it saved itself.
+  One-time step: Connection page > "Sign in through Windows" (paste the same service login, keep Save ticked).
+  After that Hallow VPN connects, reconnects and auto-connects by itself. Windows keeps the login encrypted for you.
+
 WHAT'S NEW IN 1.2.4 - Nord's encryption
 - Fixed error 13868: Windows offers old encryption by default and Nord's servers refuse it. The "Hallow VPN"
   connection now uses AES-256-GCM, SHA-256 and DH group 14 (set on every connect, no admin).

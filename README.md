@@ -93,9 +93,11 @@ playing: it can pause the VPN for your game and reconnect after, or move you to 
 
   ![Best for gaming (made-up data)](docs/servers-gaming.png)
 - **Connect** with Windows' own IKEv2 client: one **per-user** VPN connection called "Hallow VPN" (PowerShell `Add-VpnConnection`
-  / `Set-VpnConnection` **without** `-AllUserConnection`, so no admin): IKEv2, EAP (EAP-MSCHAPv2), encryption required, credentials
-  **not** remembered by Windows. It's dialled with `RasDial` **inside Hallow VPN** with the service credentials, so the password is
-  never on a command line (no `rasdial <user> <pass>`). The Connection page shows the server, protocol, **connected time** and your
+  / `Set-VpnConnection` **without** `-AllUserConnection`, so no admin): IKEv2, EAP (EAP-MSCHAPv2), encryption AES-256-GCM / SHA-256 /
+  DH group 14 (Windows' defaults are refused by Nord - error 13868). **One-time sign-in through Windows:** for this EAP method Windows
+  only uses a login it saved itself (an app's user name / password are ignored - error 691), so the Connection page's **Sign in
+  through Windows** opens Windows' own dialog once; Windows keeps the login encrypted for your Windows user. After that it's dialled
+  with `RasDial` **inside Hallow VPN** - the password is never on a command line (no `rasdial <user> <pass>`). The Connection page shows the server, protocol, **connected time** and your
   **public IP** - fetched from Nord's own IP check (`api.nordvpn.com/v1/helpers/ips/insights`) **only while connected**.
   **Auto-reconnect** (3 s, 10 s, 30 s ... up to 5 minutes) when the connection drops.
 - **NordVPN's root certificate**: Windows' IKEv2 client only accepts servers whose certificate it trusts, and Nord's servers use

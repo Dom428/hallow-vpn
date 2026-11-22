@@ -51,8 +51,8 @@ namespace HallowVPN
             sb.AppendLine("  $split = $" + (p.SplitTunnel ? "true" : "false"));
             sb.AppendLine("  $c = Get-VpnConnection -Name $n -ErrorAction SilentlyContinue");
             sb.AppendLine("  if ($c -and ($c.TunnelType -ne 'Ikev2' -or $c.AuthenticationMethod -notcontains 'Eap')) { Remove-VpnConnection -Name $n -Force; $c = $null }");
-            sb.AppendLine("  if ($c) { Set-VpnConnection -Name $n -ServerAddress " + Q(p.Host) + " -SplitTunneling:$split -RememberCredential:$false -Force }");
-            sb.AppendLine("  else { Add-VpnConnection -Name $n -ServerAddress " + Q(p.Host) + " -TunnelType Ikev2 -AuthenticationMethod Eap -EncryptionLevel Required -SplitTunneling:$split -RememberCredential:$false -Force }");
+            sb.AppendLine("  if ($c) { Set-VpnConnection -Name $n -ServerAddress " + Q(p.Host) + " -SplitTunneling:$split -RememberCredential:$true -Force }");
+            sb.AppendLine("  else { Add-VpnConnection -Name $n -ServerAddress " + Q(p.Host) + " -TunnelType Ikev2 -AuthenticationMethod Eap -EncryptionLevel Required -SplitTunneling:$split -RememberCredential:$true -Force }");
             // switches MUST be written -Switch:$value: "-RememberCredential $false" binds $false to another parameter and Windows
             // refuses the profile ("conflicting PPP Tunnel types") - the 1.0-1.2 bug that stopped every first connect
             // Windows' default IKEv2 proposals (3DES / SHA1 / DH group 2) are refused by Nord's servers - error 13868. Nord accepts
@@ -177,7 +177,54 @@ namespace HallowVPN
             error = 603; return r;
         }
         public static int DialSize { get { return Marshal.SizeOf(typeof(RASDIALPARAMS)); } }
-    }
+
+        // Windows' saved EAP login for the entry (what its own sign-in dialog stores when "remember" is on). Only the SIZE is read
+        // here - never the data. size > 0 = Windows has a login to use for RasDial.
+        [DllImport("rasapi32.dll", CharSet = CharSet.Unicode)] static extern int RasGetEapUserData(IntPtr token, string phonebook, string entry, byte[] data, ref int size);
+        public static bool HasWindowsLogin(string pbk)
+        {
+            try { int size = 0; RasGetEapUserData(IntPtr.Zero, pbk, VpnScript.Entry, null, ref size); return size > 0; } catch { return false; }
+        }
+        // Windows' saved EAP login for the entry, copied into unmanaged memory for one RasDial (Wipe it); IntPtr.Zero = none saved
+        public static IntPtr WindowsLoginBlob(string pbk, out int size)
+        {
+            size = 0;
+            try
+            {
+                int sz = 0; RasGetEapUserData(IntPtr.Zero, pbk, VpnScript.Entry, null, ref sz); if (sz <= 0) return IntPtr.Zero;
+                var data = new byte[sz]; if (RasGetEapUserData(IntPtr.Zero, pbk, VpnScript.Entry, data, ref sz) != 0) { Array.Clear(data, 0, data.Length); return IntPtr.Zero; }
+                var mem = Marshal.AllocHGlobal(sz); Marshal.Copy(data, 0, mem, sz); Array.Clear(data, 0, data.Length);
+                size = sz; return mem;
+            }
+            catch { size = 0; return IntPtr.Zero; }
+        }
+        public static void Wipe(IntPtr p, int size) { if (p == IntPtr.Zero) return; for (int i = 0; i < size; i++) Marshal.WriteByte(p, i, 0); Marshal.FreeHGlobal(p); }
+        // RASDIALEXTENSIONS with RasEapInfo. ras.h packs to 4: x64 = dwSize 0, dwfOptions 4, hwndParent 8, reserved 16, reserved1 24,
+        // RasEapInfo { dwSizeofEapInfo 32, pbEapInfo 36 }, fSkipPppAuth 44, RasDevSpecificInfo { 48, 52 } = 60 (accepted on a real PC);
+        // "natural" (8-byte aligned, 64) is tried only if Windows answers 632. x86 = 40.
+        public static IntPtr Extensions(IntPtr eap, int eapSize, bool natural, out int size)
+        {
+            int so, po, total;
+            if (IntPtr.Size != 8) { so = 20; po = 24; total = 40; }
+            else if (!natural) { so = 32; po = 36; total = 60; }
+            else { so = 32; po = 40; total = 64; }
+            var p = Marshal.AllocHGlobal(total);
+            for (int i = 0; i < total; i++) Marshal.WriteByte(p, i, 0);
+            Marshal.WriteInt32(p, 0, total); Marshal.WriteInt32(p, so, eapSize); Marshal.WriteIntPtr(p, po, eap);
+            size = total; return p;
+        }        public const string NeedsWindowsLogin = "Windows needs to remember your Nord login once (error 691): click \"Sign in through Windows\" on the Connection page, paste the same service username and password, and keep \"Save\" ticked. After that Hallow VPN connects by itself.";
+        // Windows' own dial dialog for the entry (per-user, no admin): the user types the service login once and Windows saves it
+        public static string WindowsSignIn(string pbk)
+        {
+            try
+            {
+                var exe = Path.Combine(Environment.SystemDirectory, "rasphone.exe");
+                var args = (pbk != null ? "-f \"" + pbk + "\" " : "") + "-d \"" + VpnScript.Entry + "\"";
+                Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false });
+                return null;
+            }
+            catch (Exception e) { return "Couldn't open Windows' sign-in: " + e.Message; }
+        }    }
 
     public class WindowsVpn : IVpn
     {
@@ -204,12 +251,36 @@ namespace HallowVPN
         {
             if (!Nord.ValidHost(host)) return "That isn't a Nord server name.";
             var p = new Ras.RASDIALPARAMS { dwSize = Ras.DialSize, szEntryName = VpnScript.Entry, szPhoneNumber = host, szCallbackNumber = "", szUserName = c.User, szPassword = c.Pass, szDomain = "" };
-            IntPtr h;
-            int err = Ras.RasDial(IntPtr.Zero, File.Exists(Phonebook) ? Phonebook : null, ref p, 0, IntPtr.Zero, out h);
+            IntPtr h = IntPtr.Zero; int err;
+            var pbk = File.Exists(Phonebook) ? Phonebook : null;
+            // Nord's login is EAP-MSCHAPv2 (Windows' legacy method). For it RasDial uses neither RASDIALPARAMS' user name / password
+            // nor the entry's RAS credentials - Nord saw no login and said 691 while Windows' own dialog connected (1.2.5, real PC).
+            // What Windows' dialog does: it passes the EAP login Windows saved for the entry in RASDIALEXTENSIONS.RasEapInfo. So: one
+            // sign-in through Windows (WindowsSignIn, "Save" ticked), then every dial hands that saved blob to RasDial - checked on a
+            // real PC: connected. The blob is Windows' own (we never parse it), copied to memory only for the call and wiped after.
+            int blobSize; var blob = Ras.WindowsLoginBlob(pbk, out blobSize);
+            try
+            {
+                if (blob != IntPtr.Zero)
+                {
+                    p.szUserName = ""; p.szPassword = "";
+                    int extSize; var ext = Ras.Extensions(blob, blobSize, false, out extSize);
+                    try { err = Ras.RasDial(ext, pbk, ref p, 0, IntPtr.Zero, out h); } finally { Marshal.FreeHGlobal(ext); }
+                    if (err == 632 && IntPtr.Size == 8)   // size refused: the naturally aligned layout
+                    {
+                        if (h != IntPtr.Zero) { Ras.RasHangUp(h); WaitDown(h, 3000); h = IntPtr.Zero; }
+                        ext = Ras.Extensions(blob, blobSize, true, out extSize);
+                        try { err = Ras.RasDial(ext, pbk, ref p, 0, IntPtr.Zero, out h); } finally { Marshal.FreeHGlobal(ext); }
+                    }
+                }
+                else err = Ras.RasDial(IntPtr.Zero, pbk, ref p, 0, IntPtr.Zero, out h);
+            }
+            finally { Ras.Wipe(blob, blobSize); }
             p.szPassword = null;
             if (err == 0) { LastCode = 0; return null; }
             LastCode = err;
             if (h != IntPtr.Zero) { Ras.RasHangUp(h); WaitDown(h, 3000); }
+            if (err == 691 && !Ras.HasWindowsLogin(pbk)) return Ras.NeedsWindowsLogin;
             return Ras.Explain(err);
         }
         public string HangUp()

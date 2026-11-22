@@ -140,7 +140,7 @@ namespace HallowVPN.Tests
         {
             var p = VpnScript.Profile(new ProfileSpec { Host = "nl1234.nordvpn.com", SplitTunnel = true, Routes = new List<string> { "203.0.113.0/24", "2001:db8::/32" } });
             Ok(!p.Contains("AllUserConnection"), "profile: per-user (never -AllUserConnection, so no admin)");
-            Ok(p.Contains("-TunnelType Ikev2") && p.Contains("-AuthenticationMethod Eap") && p.Contains("-EncryptionLevel Required") && p.Contains("-RememberCredential:$false"), "profile: IKEv2, EAP, encryption required, Windows doesn't keep the credentials");
+            Ok(p.Contains("-TunnelType Ikev2") && p.Contains("-AuthenticationMethod Eap") && p.Contains("-EncryptionLevel Required") && p.Contains("-RememberCredential:$true") && !p.Contains("-RememberCredential:$false"), "profile: IKEv2, EAP, encryption required, Windows remembers the EAP login (Nord's EAP only works with Windows' saved login)");
             Ok(!Regex.IsMatch(p, @"-(SplitTunneling|RememberCredential|Force|PassThru|AllUserConnection|UseWinlogonCredential) \$"), "profile: switches written -Switch:$value (with a space PowerShell binds the value to another parameter and Windows refuses the profile)");
             // real PowerShell through VpnScript.Run with harmless scripts (nothing on the system changes): the first line must
             // survive (a byte-order mark on stdin broke "$ErrorActionPreference" in 1.0-1.2.1), and a failure always has a reason
@@ -152,6 +152,13 @@ namespace HallowVPN.Tests
             Ok(VpnScript.Reason("", "", 5).Contains("exit code 5") && VpnScript.Reason("", "#< CLIXML\r\nboom", 1) == "boom" && VpnScript.Reason("x\nERR bad", "", 1) == "bad", "Reason: never empty (ERR line, then stderr, then output, then the exit code)");
             Ok(p.Contains("Set-VpnConnectionIPsecConfiguration -ConnectionName $n") && p.Contains("-CipherTransformConstants GCMAES256") && p.Contains("-DHGroup Group14") && p.IndexOf("Set-VpnConnectionIPsecConfiguration") > p.IndexOf("Add-VpnConnection"), "profile: Nord's IKEv2 encryption (AES-256-GCM, SHA-256, DH 14) set after the entry exists - Windows' defaults give error 13868");
             Ok(Account.Check(" user1 ", " pass1 ") == null && Account.Unprotect(Account.Protect(new Credentials { User = "u1 ", Pass = " p1 " })).Pass == "p1", "account: spaces copied around the password are trimmed (they gave error 691)");
+            Ok(!Ras.HasWindowsLogin(Path.Combine(Path.GetTempPath(), "hallow-no-such-" + Guid.NewGuid().ToString("N") + ".pbk")), "Windows login check: a phonebook without the entry has no saved login (size-only read)");
+            Ok(Ras.NeedsWindowsLogin.Contains("Sign in through Windows") && Ras.NeedsWindowsLogin.Contains("691"), "691 without Windows' saved login says exactly what to click");
+            { int bs; var none = Ras.WindowsLoginBlob(Path.Combine(Path.GetTempPath(), "hallow-no-such-" + Guid.NewGuid().ToString("N") + ".pbk"), out bs); Ok(none == IntPtr.Zero && bs == 0, "saved-login blob: none for a phonebook without the entry");
+              int es; var ext = Ras.Extensions(new IntPtr(0x1234), 77, false, out es);
+              Ok(es == (IntPtr.Size == 8 ? 60 : 40) && System.Runtime.InteropServices.Marshal.ReadInt32(ext, 0) == es && System.Runtime.InteropServices.Marshal.ReadInt32(ext, IntPtr.Size == 8 ? 32 : 20) == 77 && System.Runtime.InteropServices.Marshal.ReadIntPtr(ext, IntPtr.Size == 8 ? 36 : 24) == new IntPtr(0x1234), "RASDIALEXTENSIONS packed like ras.h (60 bytes on x64, RasEapInfo at 32 / 36)");
+              System.Runtime.InteropServices.Marshal.FreeHGlobal(ext);
+              var nat = Ras.Extensions(new IntPtr(0x1234), 77, true, out es); Ok(IntPtr.Size != 8 || (es == 64 && System.Runtime.InteropServices.Marshal.ReadIntPtr(nat, 40) == new IntPtr(0x1234)), "RASDIALEXTENSIONS natural layout (64) for the 632 retry"); System.Runtime.InteropServices.Marshal.FreeHGlobal(nat); }
             Ok(p.Contains("-SplitTunneling:$split") && p.Split(new[] { "-SplitTunneling:$split" }, StringSplitOptions.None).Length == 3, "profile: both Add- and Set-VpnConnection pass split tunnelling as a switch value");
             Ok(p.Contains("'Hallow VPN'") && p.Contains("-ServerAddress 'nl1234.nordvpn.com'") && p.Contains("$split = $true"), "profile: name, server, split tunnelling");
             Ok(p.Contains("Add-VpnConnectionRoute -ConnectionName $n -DestinationPrefix '203.0.113.0/24'") && p.Contains("'2001:db8::/32'") && p.Contains("Remove-VpnConnectionRoute"), "profile: old routes out, new routes in");
