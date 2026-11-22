@@ -49,6 +49,10 @@ GOOD TO KNOW (honest limits)
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
 
+WHAT'S NEW IN 1.2.3 - flags
+- Countries and servers show their flag instead of a two-letter code (hover for the code). The flags are built in,
+  nothing is downloaded while you use the app.
+
 WHAT'S NEW IN 1.2.2 - the first connect works (really)
 - Fixed: the script that creates the "Hallow VPN" connection reached PowerShell with an invisible byte-order mark
   in front, so its first line failed and Windows never got the request ("Windows couldn't set up the VPN profile:"

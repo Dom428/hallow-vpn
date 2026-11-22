@@ -12,6 +12,8 @@ $refs = "$wpf\PresentationFramework.dll", "$wpf\PresentationCore.dll", "$wpf\Win
     "$fw\System.Windows.Forms.dll", "$fw\System.Drawing.dll", "$fw\System.Runtime.Serialization.dll", "$fw\System.Core.dll",
     "$fw\System.IO.Compression.dll", "$fw\System.IO.Compression.FileSystem.dll", "$fw\System.Web.Extensions.dll", "$fw\System.Xml.dll", "$fw\System.Security.dll", "$fw\System.ServiceProcess.dll"
 $common = @('/nologo', '/optimize+', "/win32icon:$src\hallow.ico", "/resource:$src\Theme.xaml,HallowVPN.Theme.xaml") + ($refs | ForEach-Object { "/reference:$_" })
+# country flags (flagcdn.com, 40 px wide PNGs) -> HallowVPN.Flags.<code>.png
+$common += Get-ChildItem (Join-Path $src 'flags') -Filter *.png -ErrorAction SilentlyContinue | ForEach-Object { "/resource:$($_.FullName),HallowVPN.Flags.$($_.BaseName.ToLowerInvariant()).png" }
 $files = Get-ChildItem $src -Filter *.cs | ForEach-Object FullName
 & "$fw\csc.exe" @($common + @('/target:winexe', "/out:$out") + $files)
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }

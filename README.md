@@ -199,5 +199,7 @@ the kill switch upgrade with a fake firewall.
 
 ## Credits
 
+Flags: [flagcdn.com](https://flagcdn.com) (country flags are public domain), built into the app.
+
 Icons: [Font Awesome Free](https://fontawesome.com) 7.3.1 by Fonticons, Inc., licensed CC BY 4.0 - see `FontAwesome-LICENSE.txt`.
 NordVPN is a trademark of Nord Security; Hallow VPN only uses your own subscription through Nord's manual-setup credentials.

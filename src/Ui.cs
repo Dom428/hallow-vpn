@@ -109,9 +109,42 @@ namespace HallowVPN
             return accent;
         }
 
-        // a country code in a small tile ("NL"), standing in for a flag
+        // the country's flag (embedded PNGs from flagcdn.com, 40 px wide, one per Nord country - built into the exe, nothing is
+        // fetched at run time); the code in a small tile ("NL") if there's no flag for it. Hover shows the code.
+        static readonly Dictionary<string, BitmapSource> flagCache = new Dictionary<string, BitmapSource>();
+        public static BitmapSource Flag(string code)
+        {
+            if (string.IsNullOrEmpty(code)) return null;
+            var c = code.Trim().ToLowerInvariant(); if (c == "uk") c = "gb";
+            if (c.Length != 2) return null;
+            BitmapSource b;
+            lock (flagCache)
+            {
+                if (flagCache.TryGetValue(c, out b)) return b;
+                try
+                {
+                    using (var st = Assembly.GetExecutingAssembly().GetManifestResourceStream("HallowVPN.Flags." + c + ".png"))
+                    {
+                        if (st != null)
+                        {
+                            var img = new BitmapImage(); img.BeginInit(); img.CacheOption = BitmapCacheOption.OnLoad; img.StreamSource = st; img.EndInit(); img.Freeze(); b = img;
+                        }
+                    }
+                }
+                catch { b = null; }
+                flagCache[c] = b; return b;
+            }
+        }
         public static FrameworkElement CountryTile(string code, double size = 22)
         {
+            var flag = Flag(code);
+            if (flag != null)
+            {
+                // flags have different shapes (Switzerland square, Nepal taller than wide): fit inside the same box, centred
+                var im = new Image { Source = flag, Stretch = Stretch.Uniform, Width = size + 6, Height = size - 4, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, SnapsToDevicePixels = true };
+                RenderOptions.SetBitmapScalingMode(im, BitmapScalingMode.HighQuality);
+                return new Border { Width = size + 6, Height = size - 4, VerticalAlignment = VerticalAlignment.Center, Child = im, ToolTip = code.ToUpperInvariant() };
+            }
             return new Border { Width = size + 6, Height = size - 4, CornerRadius = new CornerRadius(2), Background = R("TileBg"), VerticalAlignment = VerticalAlignment.Center,
                 Child = new TextBlock { Text = string.IsNullOrEmpty(code) ? "--" : code.ToUpperInvariant(), FontSize = size * 0.46, FontWeight = FontWeights.Bold, FontFamily = Mono, Foreground = R("TileText"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         }
