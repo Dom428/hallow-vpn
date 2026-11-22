@@ -140,7 +140,9 @@ namespace HallowVPN.Tests
         {
             var p = VpnScript.Profile(new ProfileSpec { Host = "nl1234.nordvpn.com", SplitTunnel = true, Routes = new List<string> { "203.0.113.0/24", "2001:db8::/32" } });
             Ok(!p.Contains("AllUserConnection"), "profile: per-user (never -AllUserConnection, so no admin)");
-            Ok(p.Contains("-TunnelType Ikev2") && p.Contains("-AuthenticationMethod Eap") && p.Contains("-EncryptionLevel Required") && p.Contains("-RememberCredential $false"), "profile: IKEv2, EAP, encryption required, Windows doesn't keep the credentials");
+            Ok(p.Contains("-TunnelType Ikev2") && p.Contains("-AuthenticationMethod Eap") && p.Contains("-EncryptionLevel Required") && p.Contains("-RememberCredential:$false"), "profile: IKEv2, EAP, encryption required, Windows doesn't keep the credentials");
+            Ok(!Regex.IsMatch(p, @"-(SplitTunneling|RememberCredential|Force|PassThru|AllUserConnection|UseWinlogonCredential) \$"), "profile: switches written -Switch:$value (with a space PowerShell binds the value to another parameter and Windows refuses the profile)");
+            Ok(p.Contains("-SplitTunneling:$split") && p.Split(new[] { "-SplitTunneling:$split" }, StringSplitOptions.None).Length == 3, "profile: both Add- and Set-VpnConnection pass split tunnelling as a switch value");
             Ok(p.Contains("'Hallow VPN'") && p.Contains("-ServerAddress 'nl1234.nordvpn.com'") && p.Contains("$split = $true"), "profile: name, server, split tunnelling");
             Ok(p.Contains("Add-VpnConnectionRoute -ConnectionName $n -DestinationPrefix '203.0.113.0/24'") && p.Contains("'2001:db8::/32'") && p.Contains("Remove-VpnConnectionRoute"), "profile: old routes out, new routes in");
             Ok(!Regex.IsMatch(p, "(?i)password|-Credential\\b|UsernamePassword"), "profile script carries no credentials");

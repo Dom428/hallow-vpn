@@ -49,6 +49,10 @@ GOOD TO KNOW (honest limits)
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
 
+WHAT'S NEW IN 1.2.1 - the first connect works
+- Fixed: Windows refused to create the "Hallow VPN" connection ("conflicting PPP Tunnel types"), so Connect and
+  Test connection never dialled. Two on/off settings were passed to PowerShell the wrong way; found on a real PC.
+
 WHAT'S NEW IN 1.2 - NordLynx, and a tighter kill switch
 - NordLynx (Nord's WireGuard) next to IKEv2, through the official WireGuard for Windows. Protocol:
   Automatic / NordLynx / IKEv2 (NordLynx page). "Install WireGuard" downloads the official installer

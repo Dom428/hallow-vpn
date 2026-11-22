@@ -51,8 +51,10 @@ namespace HallowVPN
             sb.AppendLine("  $split = $" + (p.SplitTunnel ? "true" : "false"));
             sb.AppendLine("  $c = Get-VpnConnection -Name $n -ErrorAction SilentlyContinue");
             sb.AppendLine("  if ($c -and ($c.TunnelType -ne 'Ikev2' -or $c.AuthenticationMethod -notcontains 'Eap')) { Remove-VpnConnection -Name $n -Force; $c = $null }");
-            sb.AppendLine("  if ($c) { Set-VpnConnection -Name $n -ServerAddress " + Q(p.Host) + " -SplitTunneling $split -RememberCredential $false -Force }");
-            sb.AppendLine("  else { Add-VpnConnection -Name $n -ServerAddress " + Q(p.Host) + " -TunnelType Ikev2 -AuthenticationMethod Eap -EncryptionLevel Required -SplitTunneling $split -RememberCredential $false -Force }");
+            sb.AppendLine("  if ($c) { Set-VpnConnection -Name $n -ServerAddress " + Q(p.Host) + " -SplitTunneling:$split -RememberCredential:$false -Force }");
+            sb.AppendLine("  else { Add-VpnConnection -Name $n -ServerAddress " + Q(p.Host) + " -TunnelType Ikev2 -AuthenticationMethod Eap -EncryptionLevel Required -SplitTunneling:$split -RememberCredential:$false -Force }");
+            // switches MUST be written -Switch:$value: "-RememberCredential $false" binds $false to another parameter and Windows
+            // refuses the profile ("conflicting PPP Tunnel types") - the 1.0-1.2 bug that stopped every first connect
             sb.AppendLine("  $c = Get-VpnConnection -Name $n");
             sb.AppendLine("  foreach ($r in @($c.Routes)) { if ($r) { Remove-VpnConnectionRoute -ConnectionName $n -DestinationPrefix $r.DestinationPrefix -ErrorAction SilentlyContinue } }");
             if (p.SplitTunnel) foreach (var r in p.Routes) sb.AppendLine("  Add-VpnConnectionRoute -ConnectionName $n -DestinationPrefix " + Q(r));
