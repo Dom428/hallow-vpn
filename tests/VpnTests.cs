@@ -34,7 +34,7 @@ namespace HallowVPN.Tests
             Dir = Path.Combine(Path.GetTempPath(), "HallowVPNTest" + Process.GetCurrentProcess().Id);
             Environment.SetEnvironmentVariable("HALLOW_VPN_TESTDIR", Dir);
             Fx = Path.Combine(Path.GetDirectoryName(typeof(Run).Assembly.Location), "fixtures");
-            try { Parsing(); Targets(); Picking(); Cache(); SplitTests(); Scripts(); AccountTests(); KillSwitchTests(); CaTests(); GameTests(); TailscaleTests(); ModeTests(); Misc(); V11.All(Ok, Dir, Fx); RealReadOnly(); PipeAndApp(); }
+            try { Parsing(); Targets(); Picking(); Cache(); SplitTests(); Scripts(); AccountTests(); KillSwitchTests(); CaTests(); GameTests(); TailscaleTests(); ModeTests(); Misc(); V11.All(Ok, Dir, Fx); V12.All(Ok, Dir, Fx); RealReadOnly(); PipeAndApp(); }
             catch (Exception e) { fail++; Console.WriteLine("FAIL exception: " + e); }
             try { if (Directory.Exists(Dir)) Directory.Delete(Dir, true); } catch { }
             Console.WriteLine(pass + " passed, " + fail + " failed");
@@ -181,17 +181,27 @@ namespace HallowVPN.Tests
         static void KillSwitchTests()
         {
             var rules = KillSwitch.Rules();
-            Ok(rules.Count == 12 && rules.All(r => r.Name.StartsWith(KillSwitch.Prefix + " - ")) && rules.Select(r => r.Name).Distinct().Count() == 12, "12 rules, all named \"Hallow VPN kill switch - ...\"");
+            Ok(rules.Count == 16 && rules.All(r => r.Name.StartsWith(KillSwitch.Prefix + " - v2 ")) && rules.Select(r => r.Name).Distinct().Count() == 16, "16 rules (1.2), all named \"Hallow VPN kill switch - v2 ...\"");
             Ok(rules.All(r => r.InterfaceType == "wireless" || r.InterfaceType == "lan"), "only Wi-Fi and wired connections (the VPN's own \"ras\" connection is never blocked)");
             Ok(rules.All(r => r.AddArgs().Contains(" dir=out action=block ")), "outbound block rules");
-            Ok(rules.Where(r => r.Protocol == "UDP").All(r => !PortIn(r.RemotePort, 500) && !PortIn(r.RemotePort, 4500) && !PortIn(r.RemotePort, 53) && PortIn(r.RemotePort, 443) && PortIn(r.RemotePort, 501) && PortIn(r.RemotePort, 65535)), "UDP: 500 / 4500 (IKEv2) and 53 (DNS) stay open, the rest is blocked");
-            Ok(rules.Where(r => r.Protocol == "TCP").All(r => !PortIn(r.RemotePort, 53) && PortIn(r.RemotePort, 443) && PortIn(r.RemotePort, 1)), "TCP: everything but DNS is blocked");
+            var udp4 = rules.Where(r => r.Protocol == "UDP" && r.RemoteIp.Contains(".")).ToList();
+            Ok(udp4.Count == 4 && udp4.All(r => !PortIn(r.RemotePort, 500) && !PortIn(r.RemotePort, 4500) && !PortIn(r.RemotePort, 51820) && PortIn(r.RemotePort, 443) && PortIn(r.RemotePort, 501) && PortIn(r.RemotePort, 51821) && PortIn(r.RemotePort, 65535)), "UDP IPv4: 500 / 4500 (IKEv2) and 51820 (NordLynx) stay open, the rest is blocked");
+            Ok(udp4.Where(r => r.Name.EndsWith("UDP IPv4")).All(r => PortIn(r.RemotePort, 53)) && udp4.Where(r => r.Name.EndsWith("Nord DNS")).All(r => !PortIn(r.RemotePort, 53) && r.RemoteIp == "103.86.96.100,103.86.99.100"), "DNS (53) is blocked to every public address except NordVPN's two DNS servers");
+            Ok(rules.Where(r => r.Protocol == "TCP" && r.Name.EndsWith("TCP IPv4")).All(r => r.RemotePort == null && !InRanges(r.RemoteIp, "103.86.96.100") && InRanges(r.RemoteIp, "103.86.96.99") && InRanges(r.RemoteIp, "103.86.96.101") && InRanges(r.RemoteIp, "8.8.8.8")) && rules.Where(r => r.Protocol == "TCP" && r.Name.EndsWith("Nord DNS")).All(r => !PortIn(r.RemotePort, 53) && PortIn(r.RemotePort, 443)), "TCP IPv4: everything blocked, except DNS to Nord's DNS servers");
+            Ok(rules.Where(r => r.RemoteIp == KillSwitch.PublicV6).Count() == 6 && rules.Where(r => r.RemoteIp == KillSwitch.PublicV6).All(r => r.RemotePort == null && r.LocalIp == null), "public IPv6: TCP, UDP and ICMP blocked on every port (DNS and IKEv2 too)");
+            Ok(rules.Where(r => r.RemoteIp.Contains(".")).All(r => r.LocalIp == KillSwitch.NotTunnel && !InRanges(r.LocalIp, "10.5.0.2") && InRanges(r.LocalIp, "10.5.0.1") && InRanges(r.LocalIp, "192.168.1.23") && r.AddArgs().Contains(" localip=" + KillSwitch.NotTunnel)), "IPv4 rules leave the NordLynx tunnel's own address (10.5.0.2) alone");
+            var legacy = KillSwitch.Legacy();
+            Ok(legacy.Count == 12 && legacy.All(r => r.Name.StartsWith(KillSwitch.Prefix + " - ") && !r.Name.Contains(" v2 ")) && !legacy.Select(r => r.Name).Intersect(rules.Select(r => r.Name)).Any(), "the 1.0 rules (12) are known by name, and none share a name with 1.2's");
+            var netsh = "\r\nRule Name:                            " + legacy[0].Name + "\r\n-----\r\nEnabled:                              Yes\r\n\r\nRegelname:                            " + rules[0].Name + "\r\nRule Name:                            " + KillSwitch.Prefix + " - Wi-Fi TCP IPv4 (copy)\r\n";
+            Ok(KillSwitch.Count(netsh, legacy) == 1 && KillSwitch.Count(netsh, rules) == 1, "rule names are counted whole, whatever language netsh speaks");
+            Ok(KillSwitch.Subtract("1.0.0.0-1.0.0.255", new[] { "1.0.0.0", "1.0.0.7", "1.0.0.255" }) == "1.0.0.1-1.0.0.6,1.0.0.8-1.0.0.254", "range subtraction");
             foreach (var ip in new[] { "10.1.2.3", "192.168.1.1", "172.16.5.5", "172.31.255.255", "100.64.0.1", "100.127.255.254", "127.0.0.1", "169.254.1.1", "224.0.0.251", "255.255.255.255" })
                 Ok(!InRanges(KillSwitch.PublicV4, ip), "kill switch leaves " + ip + " alone");
             foreach (var ip in new[] { "8.8.8.8", "1.1.1.1", "100.63.0.1", "100.128.0.1", "172.32.0.1", "203.0.113.84", "11.0.0.1" })
                 Ok(InRanges(KillSwitch.PublicV4, ip), "kill switch covers " + ip);
             Ok(rules.All(r => !r.AddArgs().Contains("\"\"")) && rules.All(r => r.DeleteArgs() == "advfirewall firewall delete rule name=\"" + r.Name + "\""), "netsh arguments are well formed");
-            var ff = new FakeFirewall(); Ok(ff.Install() == null && ff.InstalledRules() == 12 && ff.Remove() == null && ff.InstalledRules() == 0, "fake firewall: install / remove");
+            var ff = new FakeFirewall(); Ok(ff.Install() == null && ff.InstalledRules() == 16 && ff.Remove() == null && ff.InstalledRules() == 0, "fake firewall: install / remove");
+            foreach (var r in legacy) ff.Rules.Add(r.Name); Ok(ff.OldRules() == 12 && ff.InstalledRules() == 0 && ff.Install() == null && ff.OldRules() == 0 && ff.InstalledRules() == 16, "upgrading: installing replaces the 1.0 rules with 1.2's");
             ff.Cancel = true; Ok(ff.Install() == Elevated.Cancelled, "UAC cancelled -> a clear message");
             Ok(Elevated.Run("killswitch-on") == "Not in a test copy." && Elevated.RunHere("killswitch-on") == 5 && Elevated.RunHere("format c:") == 5, "the elevated helper refuses to run in a test copy (and any unknown command)");
             Ok(Games.Effective(Split.All, Games.ModePause, true) == Games.ModeLowPing && Games.Effective(Split.ExceptGames, Games.ModeOff, true) == Games.ModeLowPing, "with the kill switch, \"disconnect for games\" becomes \"low-ping server\"");
@@ -294,7 +304,7 @@ namespace HallowVPN.Tests
             IntPtr h; int code = Ras.RasDial(IntPtr.Zero, pbk, ref p, 0, IntPtr.Zero, out h);
             if (h != IntPtr.Zero) Ras.RasHangUp(h);
             Ok(code == 623 || code == 621, "RasDial accepts RASDIALPARAMS and finds no entry in an empty test phonebook (code " + code + ", 632 would mean a wrong size) - nothing dialled");
-            var wf = new WindowsFirewall(); var n = wf.InstalledRules(); Ok(n == 0, "real firewall rule list read (read-only): " + n + " Hallow VPN kill switch rules");
+            var wf = new WindowsFirewall(); var n = wf.InstalledRules(); var o = wf.OldRules(); Ok(n == 0 && o == 0, "real firewall rule list read (read-only): " + n + " v2 and " + o + " 1.0 Hallow VPN kill switch rules");
             Ok(wf.FirewallOn() != null, "Windows Firewall state read: " + (wf.FirewallOn() == true ? "on" : "off for some profile"));
             Console.WriteLine("     (NordVPN Root CA in the computer's Trusted Root store: " + NordCa.InStore(StoreLocation.LocalMachine) + " - read only)");
             var ts = new RealTailscale();
@@ -332,7 +342,7 @@ namespace HallowVPN.Tests
                 string r = null; for (int i = 0; i < 40 && (r == null || !r.StartsWith("ok")); i++) { Thread.Sleep(250); r = Cmd(exe, dir, "ping"); }
                 Ok(r == "ok {\"app\":\"VPN\",\"version\":\"" + Program.Version + "\"}", "ping: " + r);
                 r = Cmd(exe, dir, "status");
-                foreach (var k in new[] { "version", "updated", "connected", "connecting", "server", "country", "protocol", "killSwitch", "splitMode", "since", "p2p", "leakCheck", "leakCheckAt", "setupDone", "untrustedNetwork" }) Ok(r.Contains("\"" + k + "\":"), "status has \"" + k + "\"");
+                foreach (var k in new[] { "version", "updated", "connected", "connecting", "server", "country", "protocol", "killSwitch", "splitMode", "since", "p2p", "leakCheck", "leakCheckAt", "setupDone", "untrustedNetwork", "adapter", "protocolChoice", "killSwitchUpgrade" }) Ok(r.Contains("\"" + k + "\":"), "status has \"" + k + "\"");
                 Ok(r.Contains("\"connected\":false") && r.Contains("\"protocol\":\"IKEv2\"") && r.Contains("\"splitMode\":\"all\"") && r.Contains("\"account\":false"), "status: not connected, IKEv2, everything through the VPN, no account");
                 Ok(Cmd(exe, dir, "connect fastest").StartsWith("error Add your Nord service credentials"), "connect without an account: refused");
                 Ok(Cmd(exe, dir, "test-account me@example.com pw").StartsWith("error That looks like your Nord login"), "the Nord login is refused");
@@ -425,6 +435,44 @@ namespace HallowVPN.Tests
                 r = Cmd(exe, dir, "status"); Ok(r.Contains("\"setupDone\":true") && r.Contains("\"autoConnect\":false"), "status: setupDone, autoConnect");
                 Cmd(exe, dir, "disconnect"); Until(exe, dir, "connected", "false");
                 Ok(Cmd(exe, dir, "status").Contains("\"p2p\":false") && Cmd(exe, dir, "status").Contains("\"leakCheck\":null"), "not connected: p2p false, no leak result");
+                // ---- 1.2: NordLynx (fake tunnel, fake WireGuard setup, fake Nord credentials endpoint) and the kill switch upgrade
+                r = Cmd(exe, dir, "protocol"); Ok(r == "ok {\"choice\":\"auto\",\"next\":\"IKEv2\",\"nordlynxReady\":false}", "protocol: Automatic, IKEv2 until NordLynx is set up: " + r);
+                Ok(Cmd(exe, dir, "protocol wireguard-ish").StartsWith("error") && Cmd(exe, dir, "protocol nordlynx").Contains("\"choice\":\"nordlynx\""), "protocol nordlynx (junk refused)");
+                Ok(Cmd(exe, dir, "connect fastest").Contains("WireGuard for Windows"), "NordLynx without WireGuard: says to install it");
+                Cmd(exe, dir, "test-wg on"); Thread.Sleep(300);
+                Ok(Cmd(exe, dir, "connect fastest").Contains("access token"), "without the key: says to paste the access token");
+                Ok(Cmd(exe, dir, "test-token me@example.com").Contains("ACCESS TOKEN"), "an email instead of the token: refused");
+                Ok(Cmd(exe, dir, "test-token 0123456789abcdef0123456789abcdef") == "ok" && File.Exists(Path.Combine(dir, "nordlynx.dat")), "the access token -> the NordLynx key from Nord (fake endpoint), saved in the test folder");
+                Ok(!File.ReadAllText(Path.Combine(dir, "nordlynx.dat"), Encoding.Default).Contains("0123456789abcdef"), "nordlynx.dat is encrypted");
+                Ok(Cmd(exe, dir, "protocol").Contains("\"nordlynxReady\":true"), "NordLynx ready");
+                Ok(Cmd(exe, dir, "connect fastest") == "ok connecting", "connect over NordLynx");
+                r = Until(exe, dir, "connected", "true");
+                Ok(r.Contains("\"protocol\":\"NordLynx\"") && r.Contains("\"adapter\":\"HallowNordLynx\"") && r.Contains("\"p2p\":"), "status: protocol NordLynx, adapter HallowNordLynx (for Hallow Torrents), p2p still there");
+                r = Cmd(exe, dir, "test-tunnel"); Ok(r.StartsWith("ok NordLynx True wg-up 203.0.113.") && r.Contains("(asks Windows)"), "it asked for the tunnel (fake - nothing installed): " + r);
+                var all = Cmd(exe, dir, "status") + File.ReadAllText(Path.Combine(dir, "status.json")) + Cmd(exe, dir, "test-tunnel") + Cmd(exe, dir, "test-calls");
+                Ok(!all.Contains("0123456789abcdef") && !all.Contains("aGFsbG93LWZha2Ut"), "the token and the private key are never in status, status.json or any call");
+                Cmd(exe, dir, "leaktest"); r = Until(exe, dir, "leakCheck", "\"ok\""); Ok(r.Contains("\"leakCheck\":\"ok\""), "leak test over NordLynx: ok");
+                r = Cmd(exe, dir, "test-health"); Ok(Regex.IsMatch(r, "^ok [1-9]\\d* [1-9]\\d* \\d+$"), "health over NordLynx (the adapter's byte counts): " + r);
+                Cmd(exe, dir, "test-gamemode pause"); r = Cmd(exe, dir, "test-game Delta Force");
+                Ok(!r.Contains("paused") && !r.Contains("switched") && Cmd(exe, dir, "status").Contains("\"gameMode\":\"off\"") && Cmd(exe, dir, "status").Contains("\"connected\":true"), "a game starts while on NordLynx: nothing changes (no UAC during a game)");
+                Ok(Cmd(exe, dir, "test-tunneldrop") == "ok Off", "the tunnel stops (fake) during the game");
+                Cmd(exe, dir, "test-clock 40"); Cmd(exe, dir, "test-tick 2"); Thread.Sleep(400);
+                Ok(Cmd(exe, dir, "status").Contains("\"connected\":false") && !Cmd(exe, dir, "test-tunnel").Contains("wg-up 203.0.113.84"), "no reconnect (and no UAC) while the game runs");
+                Cmd(exe, dir, "test-game none"); Cmd(exe, dir, "test-clock 0"); Cmd(exe, dir, "test-gamemode off");
+                Cmd(exe, dir, "disconnect"); Until(exe, dir, "connecting", "false");
+                // Automatic: NordLynx for clicks, IKEv2 for things Hallow VPN does by itself
+                Cmd(exe, dir, "protocol auto"); r = Cmd(exe, dir, "protocol"); Ok(r.Contains("\"next\":\"NordLynx\""), "Automatic with NordLynx set up: a click uses NordLynx");
+                Cmd(exe, dir, "test-autonet on"); Cmd(exe, dir, "test-net open Station WiFi"); r = Until(exe, dir, "connected", "true");
+                Ok(r.Contains("\"protocol\":\"IKEv2\""), "auto-connect on untrusted Wi-Fi uses IKEv2 (no UAC prompt out of nowhere)");
+                Cmd(exe, dir, "test-autonet off"); Cmd(exe, dir, "disconnect"); Until(exe, dir, "connected", "false");
+                // the 1.0 kill switch: upgrade
+                r = Cmd(exe, dir, "test-oldks on"); Ok(r == "ok True True" && Cmd(exe, dir, "status").Contains("\"killSwitchUpgrade\":true"), "the 1.0 kill switch is recognised (on, upgrade offered)");
+                Cmd(exe, dir, "protocol nordlynx"); Ok(Cmd(exe, dir, "connect fastest").Contains("Upgrade it"), "NordLynx with the 1.0 kill switch: says to upgrade first");
+                r = Cmd(exe, dir, "diagnose"); Ok(r.Contains("\"id\":\"nordlynx\",\"status\":\"ok\"") && r.Contains("\"id\":\"blockers\",\"status\":\"warn\""), "Fix my connection: NordLynx ok, the old kill switch flagged");
+                Cmd(exe, dir, "test-ksinstall"); Thread.Sleep(500); r = Cmd(exe, dir, "status");
+                Ok(r.Contains("\"killSwitch\":true") && r.Contains("\"killSwitchUpgrade\":false"), "upgraded (fake firewall: the 1.0 rules out, 1.2's in)");
+                Cmd(exe, dir, "test-killswitch off"); Cmd(exe, dir, "protocol ikev2");
+                Ok(Cmd(exe, dir, "status").Contains("\"protocol\":\"IKEv2\"") && Cmd(exe, dir, "status").Contains("\"adapter\":null"), "back to IKEv2; not connected = no adapter");
                 Ok(Cmd(exe, dir, "invoke nothing") == "error unknown item" && Cmd(exe, dir, "frobnicate") == "error unknown command", "unknown item / command");
                 Ok(Cmd(exe, dir, "test-autostart on") == "ok True" && Cmd(exe, dir, "test-autostart off") == "ok False", "Start with Windows (test file, never the real Run key)");
                 r = Cmd(exe, dir, "test-calls"); Ok(!r.Contains("s3cretPass"), "no call ever carried the password");

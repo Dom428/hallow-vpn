@@ -23,11 +23,11 @@ namespace HallowVPN
         public static readonly string[][] Pages = {
             new[] { "connect", "Connection", "power-off" }, new[] { "setup", "First-run setup", "list-check" }, new[] { "servers", "Servers", "globe" }, new[] { "split", "Split tunnel", "code-branch" },
             new[] { "gaming", "Gaming", "gamepad" }, new[] { "auto", "Auto-connect", "wifi" }, new[] { "killswitch", "Kill switch", "shield-halved" }, new[] { "home", "Home (Tailscale)", "house" },
-            new[] { "account", "Account", "key" }, new[] { "fix", "Fix my connection", "stethoscope" }, new[] { "settings", "Settings", "gear" } };
+            new[] { "account", "Account", "key" }, new[] { "nordlynx", "NordLynx", "bolt" }, new[] { "fix", "Fix my connection", "stethoscope" }, new[] { "settings", "Settings", "gear" } };
         public static string PageId(string s)
         {
             var v = (s ?? "").Trim().ToLowerInvariant().Replace(" ", "");
-            if (v == "connection" || v == "status") v = "connect"; if (v == "kill" || v == "firewall") v = "killswitch"; if (v == "tailscale") v = "home"; if (v == "game" || v == "games") v = "gaming";
+            if (v == "connection" || v == "status") v = "connect"; if (v == "kill" || v == "firewall") v = "killswitch"; if (v == "tailscale") v = "home"; if (v == "wireguard" || v == "protocol" || v == "protocols") v = "nordlynx"; if (v == "game" || v == "games") v = "gaming";
             if (v == "splittunnel" || v == "splittunneling" || v == "splittunnelling") v = "split";
             if (v == "firstrun" || v == "first-runsetup" || v == "wizard" || v == "start") v = "setup";
             if (v == "fixmyconnection" || v == "diagnose" || v == "diagnosis" || v == "checks") v = "fix";
@@ -85,7 +85,7 @@ namespace HallowVPN
             updateBtn = Ui.Btn("Update", () => c.InstallUpdate(), true); updateBtn.Visibility = c.PendingUpdate == null ? Visibility.Collapsed : Visibility.Visible; updateBtn.HorizontalAlignment = HorizontalAlignment.Left; updateBtn.Margin = new Thickness(0, 0, 0, 10);
             if (c.PendingUpdate != null) updateBtn.Content = "Update to v" + c.PendingUpdate.Version.ToString(2);
             foot.Children.Add(updateBtn);
-            foot.Children.Add(Ui.Muted("v" + Program.Version + " · Windows' own IKEv2", 11, 0));
+            foot.Children.Add(Ui.Muted("v" + Program.Version + " · IKEv2 + NordLynx", 11, 0));
             DockPanel.SetDock(foot, Dock.Bottom); side.Children.Add(foot);
             root.Children.Add(side);
             root.Children.Add(new Border { Width = 1, Background = Ui.R("Line"), HorizontalAlignment = HorizontalAlignment.Right });
@@ -134,6 +134,7 @@ namespace HallowVPN
                 case "setup": el = SetupPage(); break;
                 case "auto": el = AutoPage(); break;
                 case "fix": el = FixPage(); break;
+                case "nordlynx": el = NordLynxPage(); break;
                 default: el = ConnectPage(); break;
             }
             content.Child = el;
@@ -143,7 +144,7 @@ namespace HallowVPN
         {
             if (meter == null) return;
             var state = c.Phase == Phase.On ? "CONNECTED" + (c.Current != null ? " · " + c.Current.Short : "") : c.Phase == Phase.Connecting ? "CONNECTING" : c.Phase == Phase.Disconnecting ? "DISCONNECTING" : c.PausedForGame ? "PAUSED FOR GAME" : "NOT CONNECTED";
-            meter.Text = state + "   IKEv2   kill switch " + (c.KillSwitchOn ? "on" : "off") + "   " + Split.Label(c.S.SplitMode).ToLowerInvariant();
+            meter.Text = state + "   " + (c.Phase == Phase.On ? c.Proto : c.ProtoFor(false)) + "   kill switch " + (c.KillSwitchOn ? "on" : "off") + "   " + Split.Label(c.S.SplitMode).ToLowerInvariant();
         }
         TextBlock clock;
         public void TickClock() { if (clock != null && c.Since != null) clock.Text = Fmt.Span(c.Now() - c.Since.Value); }
@@ -210,7 +211,7 @@ namespace HallowVPN
         // ================= Connection
         FrameworkElement ConnectPage()
         {
-            var sp = PageBody("Connection", "Your NordVPN subscription through Windows' own IKEv2 VPN client - no NordVPN app, no drivers, no admin for everyday use.");
+            var sp = PageBody("Connection", "Your NordVPN subscription through Windows' own IKEv2 client, or NordLynx through the official WireGuard for Windows - no NordVPN app.");
             if (!c.HasAccount) { sp.Children.Add(Ui.Note("Add your Nord SERVICE credentials first. They're on Nord's website (NordVPN > Set up NordVPN manually) and are not your Nord login.", "Amber", "AmberBg")); sp.Children.Add(Wrap(Go("account", "Open Account"))); }
             if (c.CaChecked && !c.CaInstalled) { sp.Children.Add(Ui.Note("Windows doesn't trust Nord's servers yet: NordVPN's root certificate isn't installed. Without it, connecting fails with error 13801. Install it on the Account page (Windows asks for permission).", "Amber", "AmberBg")); }
             if (c.Home.Current != null) sp.Children.Add(Ui.Note("Home mode is on: your traffic goes through " + c.Home.Current.Name + " (Tailscale). Stop it on the Home page to use Nord.", "Lilac", "LilacBg"));
@@ -241,7 +242,7 @@ namespace HallowVPN
             {
                 var g = new StackPanel { Margin = new Thickness(26, 0, 0, 0) };
                 if (c.Current != null) g.Children.Add(KV("Server", c.Current.Host, c.Current.Country));
-                g.Children.Add(KV("Protocol", "IKEv2", "Windows' built-in client (EAP-MSCHAPv2)"));
+                g.Children.Add(c.Proto == Controller.ProtoWg ? KV("Protocol", "NordLynx", "WireGuard for Windows, tunnel " + NordLynx.Tunnel) : KV("Protocol", "IKEv2", "Windows' built-in client (EAP-MSCHAPv2)"));
                 clock = new TextBlock { FontFamily = Ui.Mono, FontSize = 12.5, Text = c.Since == null ? "-" : Fmt.Span(c.Now() - c.Since.Value) };
                 g.Children.Add(KV("Connected for", clock));
                 g.Children.Add(KV("Public IP", c.IpLoading ? "checking…" : c.PublicIp ?? "-", (c.IpProtected == true ? "protected, " : "") + (c.IpCountry != null ? c.IpCountry + " · " : "") + "Nord's IP check (api.nordvpn.com), only while connected"));
@@ -253,7 +254,7 @@ namespace HallowVPN
             card.Children.Add(left);
             var btns = new StackPanel { VerticalAlignment = VerticalAlignment.Top, MinWidth = 210 };
             Func<Button, Button> full = b => { b.HorizontalAlignment = HorizontalAlignment.Stretch; b.Margin = new Thickness(0, 0, 0, 8); b.Padding = new Thickness(14, 8, 14, 8); return b; };
-            bool can = c.HasAccount && c.Home.Current == null;
+            bool can = (c.HasAccount || (c.ProtoFor(false) == Controller.ProtoWg && c.NordLynxReady)) && c.Home.Current == null;
             if (c.Phase == Phase.Off)
             {
                 var t = Target.Parse(c.S.LastTarget);
@@ -296,7 +297,7 @@ namespace HallowVPN
             var chips = new WrapPanel();
             chips.Children.Add(StatePill("Kill switch " + (c.KillSwitchOn ? "on" : c.KillSwitchPartial ? "partly installed" : "off"), c.KillSwitchOn ? "Green" : c.KillSwitchPartial ? "Amber" : "Muted", () => Show("killswitch")));
             chips.Children.Add(StatePill(Split.Label(c.S.SplitMode), c.S.SplitMode == Split.All ? "Muted" : "Lilac", () => Show("split")));
-            var gm = Games.Effective(c.S.SplitMode, c.S.GameMode, c.KillSwitchOn);
+            var gm = c.EffGame();
             chips.Children.Add(StatePill("When I play: " + (gm == Games.ModePause ? "pause" : gm == Games.ModeLowPing ? "low-ping server" : "nothing"), gm == Games.ModeOff ? "Muted" : "Lilac", () => Show("gaming")));
             chips.Children.Add(StatePill("Auto-reconnect " + (c.S.AutoReconnect ? "on" : "off"), c.S.AutoReconnect ? "Green" : "Muted", () => Show("settings")));
             if (c.Game != null) chips.Children.Add(StatePill("Playing: " + c.Game, "AccentBrush", () => Show("gaming")));
@@ -425,7 +426,7 @@ namespace HallowVPN
             Grid.SetColumn(name, 2); g.Children.Add(name);
             var load = Ui.Row(Ui.LoadBar(s.Load, 54), Pad(Ui.Num(s.Load >= 0 ? "  " + s.Load + " %" : "  -", 12))); load.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(load, 3); g.Children.Add(load);
             var ping = Ui.Num(Fmt.Ms(s.Ping), 12, s.Ping < 0 ? Ui.R("Faint") : s.Ping < 50 ? Ui.R("Green") : s.Ping < 120 ? Ui.R("Amber") : Ui.R("Red")); ping.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(ping, 4); g.Children.Add(ping);
-            bool can = c.HasAccount && c.Phase != Phase.Connecting && c.Phase != Phase.Disconnecting && c.Home.Current == null;
+            bool can = (c.HasAccount || (c.ProtoFor(false) == Controller.ProtoWg && c.NordLynxReady)) && c.Phase != Phase.Connecting && c.Phase != Phase.Disconnecting && c.Home.Current == null;
             bool here = c.Phase == Phase.On && c.Current != null && c.Current.Host == s.Host;
             var go = Ui.Btn(here ? "Connected" : "Connect", () => Act(c.Connect(Target.Parse("server:" + s.Host), true))); go.IsEnabled = can && !here; go.HorizontalAlignment = HorizontalAlignment.Right; go.Margin = new Thickness(0);
             Grid.SetColumn(go, 5); g.Children.Add(go);
@@ -505,6 +506,7 @@ namespace HallowVPN
             sp.Children.Add(Choice("Disconnect while I play, reconnect after", "Your game goes out directly (lowest ping, no VPN). Hallow VPN reconnects to the same choice 10 seconds after the game closes.", gm == Games.ModePause, () => set(Games.ModePause)));
             sp.Children.Add(Choice("Stay connected on a low-ping server", "Hallow VPN switches to the best server for gaming (nearby, under 40 % load, lowest ping) when the game starts, and back to your choice after.", gm == Games.ModeLowPing, () => set(Games.ModeLowPing)));
             var eff = Games.Effective(c.S.SplitMode, gm, c.KillSwitchOn);
+            if ((c.Phase != Phase.Off && c.Proto == Controller.ProtoWg) || c.S.Protocol == Protocols.NordLynx) sp.Children.Add(Ui.Note("With NordLynx connected, nothing changes when a game starts: disconnecting or switching NordLynx asks Windows (UAC), and Hallow VPN never pops that up during a game. Use IKEv2 (NordLynx page) if you want it to pause or switch for games.", "Lilac", "LilacBg"));
             if (c.S.SplitMode == Split.ExceptGames && gm != Games.ModePause) sp.Children.Add(Ui.Note("Split tunnel is set to \"Everything except games\", so the VPN pauses while you play anyway.", "Lilac", "LilacBg"));
             if (eff == Games.ModeLowPing && (gm == Games.ModePause || c.S.SplitMode == Split.ExceptGames) && c.KillSwitchOn) sp.Children.Add(Ui.Note("The kill switch is installed: without the VPN there's no internet, so instead of disconnecting Hallow VPN switches to a low-ping server.", "Amber", "AmberBg"));
             sp.Children.Add(Section("More games"));
@@ -527,6 +529,7 @@ namespace HallowVPN
                 c.KillSwitchPartial ? c.KillSwitchRules + " of " + KillSwitch.Rules().Count + " rules are there. Install it again to put them all back, or remove it." :
                 "Your traffic goes out directly whenever the VPN isn't connected.", 12.5, 10));
             if (c.FirewallOn == false) card.Children.Add(Ui.Note("Windows Firewall is off for at least one network type, so the kill switch can't work there. Turn it on in Windows Security.", "Red", "RedBg"));
+            if (c.KillSwitchOld) { card.Children.Add(Ui.Note("This is the kill switch from Hallow VPN 1.0. The 1.2 version is tighter: DNS only to NordVPN's servers, all public IPv6 blocked, and NordLynx (WireGuard) allowed. Upgrading swaps the rules in one go - Windows asks once (UAC).", "Amber", "AmberBg")); card.Children.Add(Wrap(Ui.Btn("Upgrade kill switch (asks Windows)", () => { Say("Windows will ask for permission..."); c.KillSwitchAsync(true, err => Say(err ?? "The kill switch is upgraded.")); }, true))); card.Children.Add(new Border { Height = 8 }); }
             var row = new WrapPanel();
             var inst = Ui.Btn(c.KillSwitchOn ? "Install again (asks Windows)" : "Install kill switch (asks Windows)", () =>
             {
@@ -534,8 +537,9 @@ namespace HallowVPN
                 Say("Windows will ask for permission...");
                 c.KillSwitchAsync(true, err => Say(err ?? "The kill switch is installed."));
             }, !c.KillSwitchOn);
+            if (c.KillSwitchOld) inst.Visibility = Visibility.Collapsed;
             row.Children.Add(inst);
-            if (c.KillSwitchRules > 0) row.Children.Add(Ui.Danger("Remove kill switch (asks Windows)", () =>
+            if (c.KillSwitchRules > 0 || c.OldKillSwitchRules > 0) row.Children.Add(Ui.Danger("Remove kill switch (asks Windows)", () =>
             {
                 if (!Dialogs.Confirm(this, "Remove the kill switch?", "Windows will ask for permission (UAC). The Hallow VPN firewall rules are removed and your traffic can go out directly again when the VPN isn't connected.", "Remove (asks Windows)", true)) return;
                 Say("Windows will ask for permission...");
@@ -545,11 +549,11 @@ namespace HallowVPN
             card.Children.Add(row);
             sp.Children.Add(Ui.Card(card, 18));
             sp.Children.Add(Section("Why it asks Windows"));
-            sp.Children.Add(Ui.Muted("Firewall rules are a system setting, so adding or removing them needs admin. Hallow VPN never does it silently: you click, Windows shows its permission prompt (UAC), and you decide. Everything else in Hallow VPN works without admin.", 12.5));
+            sp.Children.Add(Ui.Muted("Firewall rules are a system setting, so adding or removing them needs admin. Hallow VPN never does it silently: you click, Windows shows its permission prompt (UAC), and you decide. Besides the kill switch, only Nord's certificate (once) and NordLynx connects ask Windows; everything else works without admin.", 12.5));
             sp.Children.Add(Section("What it blocks, and its limits"));
             sp.Children.Add(Bullets(KillSwitch.Limits));
             sp.Children.Add(Section("The rules"));
-            sp.Children.Add(Ui.Muted(KillSwitch.Rules().Count + " outbound block rules named \"" + KillSwitch.Prefix + " - ...\" (Wi-Fi and wired; TCP, UDP and ICMP; IPv4 and IPv6) - you can see them in Windows Defender Firewall's advanced settings. Uninstalling Hallow VPN offers to remove them too.", 12));
+            sp.Children.Add(Ui.Muted(KillSwitch.Rules().Count + " outbound block rules named \"" + KillSwitch.Prefix + " - v2 ...\" (Wi-Fi and wired; TCP, UDP and ICMP; IPv4 and IPv6; UDP 500, 4500 and 51820 open; DNS only to " + string.Join(" and ", KillSwitch.NordDns) + ") - you can see them in Windows Defender Firewall's advanced settings. Uninstalling Hallow VPN offers to remove them too.", 12));
             return Scroll(sp);
         }
 

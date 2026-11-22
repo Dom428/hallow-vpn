@@ -38,7 +38,8 @@ namespace HallowVPN
             {
                 List<NetIf> ifs; try { ifs = Net.Interfaces(); } catch { ifs = new List<NetIf>(); }
                 var dns = NetCheck.Dns(ifs, a => { try { return Net.BestInterface(a); } catch { return -1; } });
-                var v6 = NetCheck.HasGlobalIpv6(ifs); var notes = new List<string>();
+                var v6 = NetCheck.HasGlobalIpv6(ifs) && Proto != ProtoWg;   // NordLynx takes ::/0 into its tunnel too (and drops it): no IPv6 around it
+                var notes = new List<string>();
                 var v = NetCheck.Verdict(prot, dns, v6, ks, split, notes);
                 Action fin = () => { leakRunning = false; if (Phase != Phase.On) return; LeakState = v; LeakAt = Now(); LeakNotes = notes; LeakDns = dns; Ipv6 = v6; Log("leak check: " + v); Fire(); };
                 if (SnapMode) fin(); else ui.BeginInvoke(fin);
@@ -99,7 +100,12 @@ namespace HallowVPN
         public void PollHealthNow()
         {
             long s, r; TimeSpan d;
-            try { if (Vpn.Stats(out s, out r, out d)) { HSent = s; HRecv = r; HDur = d; } } catch { }
+            try
+            {
+                if (Proto == ProtoWg) { if (Tunnel.Stats(out s, out r)) { HSent = s; HRecv = r; HDur = Since == null ? TimeSpan.Zero : Now() - Since.Value; } }
+                else if (Vpn.Stats(out s, out r, out d)) { HSent = s; HRecv = r; HDur = d; }
+            }
+            catch { }
             var cur = Current;
             if (cur != null && (DateTime.Now - lastPing).TotalSeconds >= 4) { lastPing = DateTime.Now; try { LivePing = Pinger.Ping(cur); } catch { LivePing = -1; } }
         }
@@ -121,7 +127,7 @@ namespace HallowVPN
         {
             if (Phase != Phase.Off || !HasAccount || Home.Current != null || !NetUntrusted || !S.AutoConnectUntrusted) return;
             if (netKey != null && userOffNet == netKey) return;   // you disconnected on this network: leave it
-            if (Game != null && Games.Effective(S.SplitMode, S.GameMode, KillSwitchOn) == Games.ModePause) { pendingAuto = true; Log("auto-connect waits for the game to close"); return; }
+            if (Game != null && EffGame() == Games.ModePause) { pendingAuto = true; Log("auto-connect waits for the game to close"); return; }
             Log("auto-connect: " + why);
             if (Connect(Target.Parse(S.LastTarget), false) == null) Notify("Connecting on an untrusted network", "Hallow VPN connects by itself because this network isn't on your trusted list.");
         }
@@ -146,7 +152,8 @@ namespace HallowVPN
                 Account = HasAccount, CaInstalled = CaInstalled, CaChecked = CaChecked, PbkText = SnapMode ? (HasAccount ? Pbk.Apply(Pbk.SampleEntry(VpnScript.Entry, "nl1234.nordvpn.com"), VpnScript.Entry, Pbk.Expected(Split.All)) : null) : Pbk.Read(Vpn.PbkPath),
                 SplitMode = SnapMode ? Split.All : S.SplitMode, Host = host, Resolve = resolve, Ping = s => Pinger.Ping(s),
                 LastDialCode = S.LastDialCode, LastDialWhen = S.LastDialWhen, HomeNode = Home.Current == null ? null : Home.Current.Name,
-                KillSwitchRules = KillSwitchRules, KillSwitchAll = KillSwitch.Rules().Count, FirewallOn = FirewallOn, Connected = Phase == Phase.On
+                KillSwitchRules = KillSwitchOn ? KillSwitch.Rules().Count : KillSwitchRules + OldKillSwitchRules, KillSwitchAll = KillSwitch.Rules().Count, FirewallOn = FirewallOn, Connected = Phase == Phase.On,
+                ProtocolChoice = S.Protocol, WgInstalled = WgInstalled, NordLynxKey = NordLynx.Exists || SnapMode, OldKillSwitch = KillSwitchOld
             };
             return Diagnosis.Run(inp);
         }

@@ -25,8 +25,11 @@ namespace HallowVPN
             return "{\"id\":" + id + ",\"name\":\"" + Esc(name) + "\",\"station\":\"" + ip + "\",\"hostname\":\"" + host + "\",\"load\":" + load + ",\"status\":\"online\"," +
                 "\"locations\":[{\"latitude\":" + ((double)c[3]).ToString(CultureInfo.InvariantCulture) + ",\"longitude\":" + ((double)c[4]).ToString(CultureInfo.InvariantCulture) +
                 ",\"country\":{\"id\":" + c[0] + ",\"name\":\"" + c[1] + "\",\"code\":\"" + c[2] + "\",\"city\":{\"id\":1,\"name\":\"" + c[5] + "\"}}}]," +
-                "\"groups\":" + groups + ",\"technologies\":[{\"id\":1,\"identifier\":\"ikev2\"},{\"id\":35,\"identifier\":\"wireguard_udp\"}]}";
+                "\"groups\":" + groups + ",\"technologies\":[{\"id\":1,\"identifier\":\"ikev2\"},{\"id\":35,\"identifier\":\"wireguard_udp\",\"metadata\":[{\"name\":\"public_key\",\"value\":\"" + WgKeyFor(host) + "\"}]}]}";
         }
+        // made up: a valid-looking WireGuard key ("hallow-fake-private-key-00000000" in base64) and server keys derived from the host name
+        public const string WgPrivateKey = "aGFsbG93LWZha2UtcHJpdmF0ZS1rZXktMDAwMDAwMDA=";
+        public static string WgKeyFor(string host) { using (var h = System.Security.Cryptography.SHA256.Create()) return Convert.ToBase64String(h.ComputeHash(System.Text.Encoding.UTF8.GetBytes(host))); }
         // servers in one country (or, for 0, the "recommended" mix: mostly the nearest countries)
         public static string ServersJson(int countryId)
         {

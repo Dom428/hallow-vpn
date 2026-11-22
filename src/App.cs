@@ -20,14 +20,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow VPN")]
 [assembly: AssemblyProduct("Hallow VPN")]
 [assembly: AssemblyDescription("A game-aware VPN client for NordVPN on Windows' built-in IKEv2")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace HallowVPN
 {
     public static class Program
     {
-        public const string Version = "1.1";
+        public const string Version = "1.2";
         [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr v);
 
         [STAThread]
@@ -36,7 +36,7 @@ namespace HallowVPN
             int ci = Array.IndexOf(args, "--cmd");
             if (ci >= 0) { Environment.Exit(Family.RunCmd(ci + 1 < args.Length ? args[ci + 1] : "")); return; }
             int ei = Array.IndexOf(args, "--elevated");
-            if (ei >= 0) { Environment.Exit(Elevated.RunHere(ei + 1 < args.Length ? args[ei + 1] : "")); return; }
+            if (ei >= 0) { Environment.Exit(Elevated.RunHere(ei + 1 < args.Length ? args[ei + 1] : "", ei + 2 < args.Length ? args[ei + 2] : null)); return; }
             try { SetProcessDpiAwarenessContext(new IntPtr(-4)); } catch { }
             int si = Array.IndexOf(args, "--snap");
             if (si >= 0 && si + 1 < args.Length)
@@ -101,6 +101,12 @@ namespace HallowVPN
                 c.SetupTest = "pass"; w.Show("setup"); Snap.Save(w, Path.Combine(dir, "setup-pass" + sfx + ".png"), 1180, 760); c.SetupTest = null;
                 // paused for a game
                 c.SnapPaused(); w.Show("connect"); Snap.Save(w, Path.Combine(dir, "connect-paused" + sfx + ".png"), 1180, 760);
+                // 1.2: NordLynx connected; NordLynx not set up; the 1.0 kill switch to upgrade
+                var c3 = new Controller(true, true); c3.SnapSetup(true, true);
+                var w3 = new MainWindow(c3); w3.Show("connect"); Snap.Save(w3, Path.Combine(dir, "connect-nordlynx" + sfx + ".png"), 1180, 760);
+                w3.Show("nordlynx"); Snap.Save(w3, Path.Combine(dir, "nordlynx-ready" + sfx + ".png"), 1180, 760);
+                w2.Show("nordlynx"); Snap.Save(w2, Path.Combine(dir, "nordlynx-new" + sfx + ".png"), 1180, 760);
+                c2.SnapOldKillSwitch(); w2.Show("killswitch"); Snap.Save(w2, Path.Combine(dir, "killswitch-upgrade" + sfx + ".png"), 1180, 760);
                 Snap.Save(Dialogs.ConfirmWindow("Install the kill switch?", KillSwitchText, "Install (asks Windows)", false, null), Path.Combine(dir, "dialog-killswitch" + sfx + ".png"), 480, 0);
                 Snap.Save(CrashNotice.Make(Path.Combine(dir, "example.txt")), Path.Combine(dir, "crash" + sfx + ".png"), 440, 0);
             }
@@ -152,12 +158,15 @@ namespace HallowVPN
             Ca = fake ? (ICa)new FakeCa { In = true } : new WindowsCa();
             Ts = fake ? (ITailscale)new FakeTailscale { Json = FakeData.TailscaleJson } : new RealTailscale();
             GameSrc = fake ? (IGameSource)new FakeGames() : new RealGames();
+            Tunnel = fake ? (ITunnel)new FakeTunnel() : new WireGuardTunnel(); Wg = fake ? (IWgSetup)new FakeWgSetup() : new RealWgSetup(); Auth = fake ? (INordAuth)new FakeNordAuth() : new RealNordAuth();
             if (snapMode) return;
             if (Account.Exists) Account.Load();   // so a crash report can blank them out (Crash.Secrets)
+            if (NordLynx.Exists) NordLynx.Load();   // the same for the NordLynx token and key (Crash.Secrets2)
             Family.Serve("VPN", Command);
             CheckAdminThings(); CheckHome();
             tick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; tick.Tick += (s, e) => Tick(); tick.Start();
-            if (Vpn.IsUp()) { Phase = Phase.On; Since = Now(); wanted = true; CurrentTarget = Target.Parse(S.LastTarget); Log("already connected at start"); if (!S.SetupDone) { S.SetupDone = true; S.Save(); } FetchIp(); }
+            if (Tunnel.IsUp()) { Proto = ProtoWg; Phase = Phase.On; Since = Now(); wanted = true; CurrentTarget = Target.Parse(S.LastTarget); Log("NordLynx already connected at start"); FetchIp(); }
+            else if (Vpn.IsUp()) { Proto = ProtoIke; Phase = Phase.On; Since = Now(); wanted = true; CurrentTarget = Target.Parse(S.LastTarget); Log("already connected at start"); if (!S.SetupDone) { S.SetupDone = true; S.Save(); } FetchIp(); }
             if (!VpnSettings.Headless)
             {
                 SetupTray();
@@ -175,15 +184,16 @@ namespace HallowVPN
             if (S.ConnectOnStart && HasAccount && Phase == Phase.Off)
             {
                 var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-                t.Tick += (s, e) => { t.Stop(); if (Game == null || Games.Effective(S.SplitMode, S.GameMode, KillSwitchOn) != Games.ModePause) Connect(Target.Parse(S.LastTarget), true); };
+                t.Tick += (s, e) => { t.Stop(); if (Game == null || EffGame() != Games.ModePause) Connect(Target.Parse(S.LastTarget), true); };
                 t.Start();
             }
             if (!trayOnly && !VpnSettings.Headless) ShowMain(S.SetupDone ? null : "setup");
         }
         void Log(string s) { lock (log) { log.Add(DateTime.Now.ToString("HH:mm:ss") + " " + s); if (log.Count > 100) log.RemoveAt(0); } }
         void Fire() { WriteStatus(); var h = Changed; if (h != null) h(); }
-        public bool KillSwitchOn { get { return KillSwitchRules >= KillSwitch.Rules().Count; } }
-        public bool KillSwitchPartial { get { return KillSwitchRules > 0 && !KillSwitchOn; } }
+        public bool KillSwitchOn { get { return KillSwitchRules >= KillSwitch.Rules().Count || OldKillSwitchRules >= KillSwitch.Legacy().Count; } }
+        public bool KillSwitchPartial { get { return (KillSwitchRules > 0 || OldKillSwitchRules > 0) && !KillSwitchOn; } }
+        public bool KillSwitchOld { get { return OldKillSwitchRules > 0 && KillSwitchRules < KillSwitch.Rules().Count; } }   // 1.0's rules: "Upgrade kill switch"
 
         // ---------------- the connection
         Credentials Creds() { return SnapMode ? snapCreds : Account.Load(); }
@@ -192,21 +202,39 @@ namespace HallowVPN
         {
             if (t == null) return "Unknown server.";
             if (Phase == Phase.Connecting || Phase == Phase.Disconnecting) return "Hallow VPN is busy - wait a moment.";
-            var creds = Creds();
-            if (creds == null) { LastError = "Add your Nord service credentials first (Account page)."; Fire(); return LastError; }
+            var proto = ProtoFor(!remember); Credentials creds = null;
+            if (proto == ProtoWg)
+            {
+                if (!WgInstalled) { LastError = "NordLynx needs WireGuard for Windows - install it on the NordLynx page (or pick IKEv2 there)."; Fire(); return LastError; }
+                if (!NordLynx.Exists && !SnapMode) { LastError = "Add your Nord access token on the NordLynx page first."; Fire(); return LastError; }
+                if (KillSwitchOld) { LastError = "The kill switch from Hallow VPN 1.0 blocks NordLynx (UDP 51820). Upgrade it on the Kill switch page first."; Fire(); return LastError; }
+                if (!remember && Game != null) { pendingAuto = true; Log("NordLynx waits for the game to close (it asks Windows)"); return "NordLynx asks Windows (UAC), so it waits until the game closes."; }
+            }
+            else
+            {
+                creds = Creds();
+                if (creds == null) { LastError = "Add your Nord service credentials first (Account page)."; Fire(); return LastError; }
+            }
             if (Home.Current != null) { LastError = "Home mode is on (Tailscale exit node " + Home.Current.Name + "). Stop it on the Home page first - the two don't stack."; Fire(); return LastError; }
             if (remember) { S.LastTarget = t.ToString(); S.Save(); PausedForGame = false; SwitchedForGame = false; resumeAt = null; }
             wanted = true; cancel = false; retryAt = null; LastError = null;
-            Phase = Phase.Connecting; CurrentTarget = t; Log("connect " + t + (remember ? "" : " (automatic)"));
+            Phase = Phase.Connecting; CurrentTarget = t; connectingProto = proto; Log("connect " + t + " over " + proto + (remember ? "" : " (automatic)"));
             Fire();
             Action work = () =>
             {
                 Server srv = null; string err = null;
                 try
                 {
-                    srv = Pick(t, out err);
-                    if (srv != null && !cancel)
+                    srv = Pick(t, out err, proto == ProtoWg);
+                    if (srv != null && !cancel && proto == ProtoWg)
                     {
+                        if (Vpn.IsUp()) Vpn.HangUp();   // from IKEv2 to NordLynx
+                        err = Tunnel.Up(srv);           // Windows asks (UAC): the user's click
+                        if (err == null && cancel) { Tunnel.Down(); err = "Cancelled."; }
+                    }
+                    else if (srv != null && !cancel)
+                    {
+                        if (Tunnel.IsUp()) { err = Tunnel.Down(); if (err != null) err = "NordLynx is still connected: " + err; }   // from NordLynx to IKEv2 (asks Windows)
                         List<string> failed = null; List<string> routes = null;
                         if (S.SplitMode == Split.Only) { routes = Split.Routes(S.SplitRoutes, SnapMode || VpnSettings.Fake ? (Func<string, System.Net.IPAddress[]>)(h => new[] { System.Net.IPAddress.Parse("198.51.100.7") }) : Split.Dns, out failed); if (routes.Count == 0) err = "\"Only these go through the VPN\" has nothing in its list that works - add an address or switch to Everything on the Split tunnel page."; }
                         if (err == null)
@@ -215,7 +243,7 @@ namespace HallowVPN
                             if (!Vpn.ProfileExists() || spec.Key != S.ProfileSpec) { err = Vpn.ApplyProfile(spec); if (err == null) { S.ProfileSpec = spec.Key; S.Save(); Log("profile set up: " + (spec.SplitTunnel ? spec.Routes.Count + " routes" : "everything")); } }
                             if (failed != null && failed.Count > 0) Log("couldn't look up: " + string.Join(", ", failed));
                         }
-                        if (err == null && !cancel) ProtectDns();
+                        if (err == null && !cancel) ProtectDns();   // IKEv2 only: NordLynx's DNS is in its own config
                         if (err == null && !cancel)
                         {
                             if (Vpn.IsUp()) Vpn.HangUp();   // switching servers
@@ -235,7 +263,7 @@ namespace HallowVPN
         {
             if (err == null)
             {
-                Phase = Phase.On; Current = srv; Since = Now(); retries = 0; LastError = null;
+                Phase = Phase.On; Current = srv; Since = Now(); retries = 0; LastError = null; Proto = connectingProto;
                 HSent = -1; LivePing = -1; lastPing = DateTime.MinValue; LeakState = null; LeakAt = null; RealIp = null; RealIpError = null;
                 Log("connected: " + srv.Short); FetchIp();
                 if (!SnapMode) { S.SetupDone = true; S.LastServer = srv.Host; S.LastDialCode = 0; S.Save(); }
@@ -243,7 +271,7 @@ namespace HallowVPN
             }
             else
             {
-                Phase = Vpn.IsUp() ? Phase.On : Phase.Off; if (Phase == Phase.Off) { Since = null; PublicIp = null; }
+                Phase = AnyUp() ? Phase.On : Phase.Off; if (Phase == Phase.Off) { Since = null; PublicIp = null; }
                 LastError = err; Log("connect failed: " + err);
                 if (Vpn.LastCode != 0 && !SnapMode) { S.LastDialCode = Vpn.LastCode; S.LastDialWhen = DateTime.Now.ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture); S.Save(); }
                 if (SetupTest == "running") SetupTest = "fail";
@@ -253,14 +281,19 @@ namespace HallowVPN
             }
             Fire();
         }
-        static bool IsRetryable(string err) { return !(err.Contains("691") || err.Contains("13801") || err.Contains("13806") || err.Contains("credentials") || err.Contains("Split tunnel") || err.Contains("Home mode") || err.Contains("profile")); }
+        static bool IsRetryable(string err) { return !(err.Contains("691") || err.Contains("13801") || err.Contains("13806") || err.Contains("credentials") || err.Contains("Split tunnel") || err.Contains("Home mode") || err.Contains("profile") || err.Contains("UAC") || err.Contains("permission") || err.Contains("NordLynx")); }
         void ScheduleRetry()
         {
             var waits = new[] { 3, 10, 30, 60, 120, 300 };
             retryAt = Now().AddSeconds(waits[Math.Min(retries, waits.Length - 1)]); retries++;
             Log("reconnect in " + (int)(retryAt.Value - Now()).TotalSeconds + " s (try " + retries + ")");
         }
-        public Server Pick(Target t, out string err)
+        public Server Pick(Target t, out string err, bool wg = false)
+        {
+            var s0 = PickAny(t, out err, wg);
+            return s0;
+        }
+        Server PickAny(Target t, out string err, bool wg)
         {
             err = null; List<Server> list; string e2;
             switch (t.Kind)
@@ -269,6 +302,7 @@ namespace HallowVPN
                     {
                         var s = Book.Find(t.Value);
                         if (s == null) { var f = S.Favourites.FirstOrDefault(x => x.Host == t.Value); s = new Server { Host = t.Value, Name = f != null ? f.Name : t.Value.Split('.')[0], Country = f != null ? f.Country : null, Code = f != null ? f.Code : null, City = f != null ? f.City : null, Load = -1 }; }
+                        if (wg && (s.WgKey == null || s.Station == null)) { err = "Nord's list has no NordLynx details for " + s.Short + " yet - pick it from the Servers page, or use IKEv2."; return null; }
                         return s;
                     }
                 case "country":
@@ -280,7 +314,8 @@ namespace HallowVPN
                 case "p2p": list = Book.List(0, false, out e2, true); break;
                 default: list = Book.List(0, false, out e2); break;
             }
-            if (list.Count == 0) { err = e2 ?? "Nord sent no IKEv2 servers."; return null; }
+            if (wg) list = list.Where(x => x.WgKey != null && x.Station != null).ToList();
+            if (list.Count == 0) { err = e2 ?? (wg ? "Nord sent no NordLynx servers." : "Nord sent no IKEv2 servers."); return null; }
             Book.Measure(list, 12);
             var pick = t.Kind == "gaming" ? Nord.ForGaming(list.Take(12)) : Nord.Fastest(list.Take(12));
             if (pick == null) err = "No server answered.";
@@ -295,8 +330,8 @@ namespace HallowVPN
             Phase = Phase.Disconnecting; Log("disconnect" + (user ? "" : " (automatic)")); Fire();
             Action work = () =>
             {
-                string err; try { err = Vpn.HangUp(); } catch (Exception e) { err = e.Message; }
-                Action fin = () => { Phase = Vpn.IsUp() ? Phase.On : Phase.Off; if (Phase == Phase.Off) { Since = null; PublicIp = null; IpCountry = null; IpProtected = null; } LastError = err; Fire(); };
+                string err; try { err = Proto == ProtoWg && Tunnel.IsUp() ? Tunnel.Down() : Vpn.HangUp(); } catch (Exception e) { err = e.Message; }
+                Action fin = () => { Phase = AnyUp() ? Phase.On : Phase.Off; if (Phase == Phase.Off) { Since = null; PublicIp = null; IpCountry = null; IpProtected = null; } LastError = err; Fire(); };
                 if (SnapMode) fin(); else ui.BeginInvoke(fin);
             };
             if (SnapMode) work(); else new Thread(() => work()) { IsBackground = true, Name = "disconnect" }.Start();
@@ -337,14 +372,14 @@ namespace HallowVPN
             ThreadPool.QueueUserWorkItem(_ =>
             {
                 bool up = false; string g = null;
-                try { up = Vpn.IsUp(); } catch { }
+                try { up = AnyUp(); } catch { }
                 if (game) { try { g = GameSrc.Running(S.ExtraGames); } catch { } }
                 NetNow n = null; if (game) { try { n = Net.Current(); } catch { } }
                 ui.BeginInvoke(new Action(() => { checking = false; Observe(up, game, g); if (n != null) NetObserved(n); }));
             });
         }
         // tests: the same, on this thread
-        public void CheckNow() { bool up = Vpn.IsUp(); string g = GameSrc.Running(S.ExtraGames); Observe(up, true, g); NetObserved(Net.Current()); }
+        public void CheckNow() { bool up = AnyUp(); string g = GameSrc.Running(S.ExtraGames); Observe(up, true, g); NetObserved(Net.Current()); }
         void Observe(bool up, bool gameChecked, string g)
         {
             if (Phase == Phase.On && !up)
@@ -356,14 +391,15 @@ namespace HallowVPN
             }
             else if (Phase == Phase.Off && up)
             {
-                Log("connected outside Hallow VPN"); Phase = Phase.On; Since = Now(); wanted = true; FetchIp(); Fire();
+                Proto = Tunnel.IsUp() ? ProtoWg : ProtoIke;
+                Log("connected outside Hallow VPN (" + Proto + ")"); Phase = Phase.On; Since = Now(); wanted = true; FetchIp(); Fire();
             }
             if (gameChecked && g != Game) GameChanged(g);
         }
         void GameChanged(string g)
         {
             var was = Game; Game = g;
-            var eff = Games.Effective(S.SplitMode, S.GameMode, KillSwitchOn);
+            var eff = EffGame();
             if (g != null && was == null)
             {
                 Log("game: " + g + " (" + eff + ")");
@@ -392,12 +428,13 @@ namespace HallowVPN
         {
             Action work = () =>
             {
-                int rules = 0; bool? on = null; bool ca = false;
-                try { rules = Fw.InstalledRules(); } catch { }
+                int rules = 0, old = 0; bool? on = null; bool ca = false, wg = false;
+                try { rules = Fw.InstalledRules(); old = Fw.OldRules(); } catch { }
+                try { wg = Wg.Installed(); } catch { }
                 try { on = Fw.FirewallOn(); } catch { }
                 try { ca = Ca.Installed(); } catch { }
                 bool v6 = false; try { v6 = NetCheck.HasGlobalIpv6(Net.Interfaces()); } catch { }
-                Action fin = () => { KillSwitchRules = rules; FirewallOn = on; CaInstalled = ca; CaChecked = true; Ipv6 = v6; Fire(); };
+                Action fin = () => { KillSwitchRules = rules; OldKillSwitchRules = old; FirewallOn = on; CaInstalled = ca; CaChecked = true; Ipv6 = v6; WgInstalled = wg; Fire(); };
                 if (SnapMode) fin(); else ui.BeginInvoke(fin);
             };
             if (SnapMode) work(); else new Thread(() => work()) { IsBackground = true, Name = "checks" }.Start();
@@ -408,8 +445,8 @@ namespace HallowVPN
             new Thread(() =>
             {
                 string err; try { err = on ? Fw.Install() : Fw.Remove(); } catch (Exception e) { err = e.Message; }
-                int rules = 0; try { rules = Fw.InstalledRules(); } catch { }
-                ui.BeginInvoke(new Action(() => { KillSwitchRules = rules; Log("kill switch: " + (err ?? "done") + ", " + rules + " rules"); Fire(); done(err); }));
+                int rules = 0, old = 0; try { rules = Fw.InstalledRules(); old = Fw.OldRules(); } catch { }
+                ui.BeginInvoke(new Action(() => { KillSwitchRules = rules; OldKillSwitchRules = old; Log("kill switch: " + (err ?? "done") + ", " + rules + " rules"); Fire(); done(err); }));
             }) { IsBackground = true, Name = "kill switch" }.Start();
         }
         public void CaFetchAsync(Action<string, string> done)
@@ -638,12 +675,12 @@ namespace HallowVPN
             var d = new Dictionary<string, object> { { "app", "VPN" }, { "version", Program.Version }, { "updated", Family.Time(DateTime.Now) }, { "running", running },
                 { "connected", Phase == Phase.On }, { "connecting", Phase == Phase.Connecting },
                 { "server", Phase == Phase.On && Current != null ? Current.Short : null }, { "country", Phase == Phase.On && Current != null ? Current.Country : null },
-                { "protocol", "IKEv2" }, { "killSwitch", KillSwitchOn }, { "splitMode", S.SplitMode },
+                { "protocol", Phase == Phase.On ? Proto : ProtoFor(false) }, { "killSwitch", KillSwitchOn }, { "splitMode", S.SplitMode },
                 { "since", Phase == Phase.On && Since != null ? Family.Time(Since.Value) : null } };
-            d["paused"] = PausedForGame; d["game"] = Game; d["gameMode"] = Games.Effective(S.SplitMode, S.GameMode, KillSwitchOn);
+            d["paused"] = PausedForGame; d["game"] = Game; d["gameMode"] = EffGame();
             d["home"] = Home.Current == null ? null : Home.Current.Name; d["account"] = HasAccount; d["autoReconnect"] = S.AutoReconnect;
             d["lastCrash"] = Crash.LastTime() == null ? null : Family.Time(Crash.LastTime().Value);
-            Status11(d);
+            Status11(d); Status12(d);
             if (VpnSettings.TestDir != null) { lock (log) d["log"] = log.ToArray(); d["notifications"] = Notifications; d["held"] = NotificationsHeld; }
             return d;
         }
@@ -655,6 +692,7 @@ namespace HallowVPN
             {
                 case "ping": return "ok " + Family.Json(new Dictionary<string, object> { { "app", "VPN" }, { "version", Program.Version } });
                 case "diagnose": { var steps = RunDiagnosisNow(); return "ok " + Family.Json(new Dictionary<string, object> { { "steps", steps.Select(x => new Dictionary<string, object> { { "id", x.Id }, { "status", x.Status } }).ToList() }, { "summary", Diagnosis.Summary(steps) } }); }
+                case "protocol": return OnUi(() => { if (arg.Length > 0) { var p = arg.ToLowerInvariant(); if (p != Protocols.Auto && p != Protocols.NordLynx && p != Protocols.Ikev2) return "error use auto, nordlynx or ikev2"; SetProtocol(p); } return "ok " + Family.Json(new Dictionary<string, object> { { "choice", S.Protocol }, { "next", ProtoFor(false) }, { "nordlynxReady", NordLynxReady } }); });
                 case "leaktest": return OnUi(() => { if (Phase != Phase.On) return "error not connected"; RunLeakCheck(); return "ok checking"; });
                 case "status": return OnUi(() => { var d = StatusData(true); Family.WriteStatus(Family.Json(d)); return "ok " + Family.Json(d); });
                 case "connect":
@@ -729,7 +767,7 @@ namespace HallowVPN
                 case "test-dialerror": fv.DialError = arg == "none" ? null : arg; return "ok";
                 case "test-calls": lock (fv.Calls) return "ok " + Family.Json(fv.Calls);
                 case "test-clock": { var add = int.Parse(arg); Now = () => DateTime.Now.AddSeconds(add); return "ok"; }
-                case "test-killswitch": ff.Rules.Clear(); if (arg == "on") foreach (var r in KillSwitch.Rules()) ff.Rules.Add(r.Name); KillSwitchRules = ff.Rules.Count; Fire(); return "ok " + KillSwitchOn;
+                case "test-killswitch": ff.Rules.Clear(); if (arg == "on") foreach (var r in KillSwitch.Rules()) ff.Rules.Add(r.Name); KillSwitchRules = Fw.InstalledRules(); OldKillSwitchRules = Fw.OldRules(); Fire(); return "ok " + KillSwitchOn;
                 case "test-current": return "ok " + (Current == null ? "none" : Current.Host) + " " + (CurrentTarget == null ? "-" : CurrentTarget.ToString());
                 case "test-net":
                     {   // wired / none / wifi <name> / open <name>
@@ -747,16 +785,23 @@ namespace HallowVPN
                 case "test-repair": { var e = arg == "profile" ? RecreateProfile() : RefreshServers(); return e == null ? "ok" : "error " + e; }
                 case "test-setuptest": { var e = StartSetupTest(); return e == null ? "ok " + SetupTest : "error " + e; }
                 case "test-setup": return "ok " + S.SetupDone + " " + (SetupTest ?? "none");
+                case "test-wg": ((FakeWgSetup)Wg).In = arg == "on"; CheckAdminThings(); return "ok";
+                case "test-token": { string e = null; SaveAccessToken(arg, err => e = err, true); return e == null ? "ok" : "error " + e; }
+                case "test-tunnel": return "ok " + Proto + " " + Tunnel.IsUp() + " " + string.Join(";", ((FakeTunnel)Tunnel).Calls);
+                case "test-tunneldrop": ((FakeTunnel)Tunnel).Drop(); CheckNow(); return "ok " + Phase;
+                case "test-tunnelerror": ((FakeTunnel)Tunnel).UpError = arg == "none" ? null : arg; return "ok";
+                case "test-oldks": ff.Rules.Clear(); if (arg == "on") foreach (var r in KillSwitch.Legacy()) ff.Rules.Add(r.Name); KillSwitchRules = Fw.InstalledRules(); OldKillSwitchRules = Fw.OldRules(); Fire(); return "ok " + KillSwitchOn + " " + KillSwitchOld;
+                case "test-ksinstall": KillSwitchAsync(true, err => { }); return "ok";
                 case "test-pbk": { var t = Pbk.Read(Vpn.PbkPath); return "ok " + (t == null ? "none" : Family.Json(Pbk.Check(t, VpnScript.Entry, S.SplitMode))); }
             }
             return "error unknown test command";
         }
 
         // ---------------- --snap: made-up state
-        public void SnapSetup(bool connected)
+        public void SnapSetup(bool connected, bool nordlynx = false)
         {
             snapAccount = connected; snapCreds = connected ? new Credentials { User = "x", Pass = "y" } : null;
-            ((FakeCa)Ca).In = connected; CheckAdminThings(); CheckHome();
+            ((FakeCa)Ca).In = connected; ((FakeWgSetup)Wg).In = connected; if (nordlynx) S.Protocol = Protocols.NordLynx; CheckAdminThings(); CheckHome();
             KillSwitchRules = connected ? KillSwitch.Rules().Count : 0; FirewallOn = true;
             S.Favourites = new List<Favourite> { new Favourite { Host = "nl1234.nordvpn.com", Name = "Netherlands #1234", Country = "Netherlands", Code = "NL", City = "Amsterdam" }, new Favourite { Host = "de5678.nordvpn.com", Name = "Germany #5678", Country = "Germany", Code = "DE", City = "Frankfurt" } };
             S.SplitMode = Split.Only; S.SplitRoutes = new List<string> { "netflix.com", "192.0.2.0/24", "198.51.100.7/32" }; S.GameMode = Games.ModeLowPing;
@@ -773,6 +818,7 @@ namespace HallowVPN
             }
             else { S.LastDialCode = 13801; S.LastDialWhen = "21 Nov 20:14"; CheckAdminThings(); }
         }
+        public void SnapOldKillSwitch() { KillSwitchRules = 0; OldKillSwitchRules = KillSwitch.Legacy().Count; Fire(); }
         public void SnapPaused() { var fg = (FakeGames)GameSrc; S.GameMode = Games.ModePause; KillSwitchRules = 0; fg.Game = "Delta Force"; CheckNow(); }
     }
 }

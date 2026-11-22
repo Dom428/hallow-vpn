@@ -25,12 +25,13 @@ namespace HallowVPN
 {
     public class FwRule
     {
-        public string Name, Protocol, InterfaceType, RemoteIp, RemotePort;
+        public string Name, Protocol, InterfaceType, RemoteIp, RemotePort, LocalIp;
         // netsh advfirewall firewall add rule ...
         public string AddArgs()
         {
             var sb = new StringBuilder("advfirewall firewall add rule name=\"" + Name + "\" dir=out action=block enable=yes profile=any interfacetype=" + InterfaceType + " protocol=" + Protocol);
             if (RemotePort != null) sb.Append(" remoteport=" + RemotePort);
+            if (LocalIp != null) sb.Append(" localip=" + LocalIp);
             sb.Append(" remoteip=" + RemoteIp + " description=\"" + KillSwitch.Description + "\"");
             return sb.ToString();
         }
@@ -46,7 +47,52 @@ namespace HallowVPN
         public static readonly string PublicV6 = "2000::-3fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff";
         public const string TcpPorts = "1-52,54-65535", UdpPorts = "1-52,54-499,501-4499,4501-65535";
 
+        // ---- 1.2 (v2): tighter. Per connection type (Wi-Fi, wired), outbound, blocked:
+        //   TCP to public IPv4 (all ports; to Nord's two DNS servers all but 53)
+        //   UDP to public IPv4 except IKEv2 (500, 4500) and WireGuard (51820) - DNS (53) only to Nord's two DNS servers
+        //   ICMP to public IPv4; TCP, UDP and ICMP to public IPv6 (2000::/3) - every port: Nord's IKEv2 and NordLynx are IPv4 only
+        // IPv4 rules skip the NordLynx tunnel's own address (local 10.5.0.2), so traffic INSIDE the WireGuard tunnel is never blocked even
+        // if Windows counts its adapter as "wired". Your router's DNS (a private address) isn't public, so Windows can still look up
+        // Nord's server names before the VPN is up.
+        public const string V2 = "v2";
+        public static readonly string[] NordDns = { Pbk.NordDns1, Pbk.NordDns2 };
+        public const string NotTunnel = "0.0.0.0-10.5.0.1,10.5.0.3-255.255.255.255";
+        public const string UdpOpen = "1-499,501-4499,4501-51819,51821-65535", UdpOpenNordDns = "1-52,54-499,501-4499,4501-51819,51821-65535";
+        public static string PublicV4NoDns { get { return Subtract(PublicV4, NordDns); } }
         public static List<FwRule> Rules()
+        {
+            var r = new List<FwRule>(); var dns = string.Join(",", NordDns);
+            foreach (var it in new[] { new[] { "wireless", "Wi-Fi" }, new[] { "lan", "wired" } })
+            {
+                Func<string, string, string, string, string, FwRule> rule = (what, proto, ip, port, local) => new FwRule { Name = Prefix + " - " + V2 + " " + it[1] + " " + what, Protocol = proto, InterfaceType = it[0], RemoteIp = ip, RemotePort = port, LocalIp = local };
+                r.Add(rule("TCP IPv4", "TCP", PublicV4NoDns, null, NotTunnel)); r.Add(rule("TCP IPv4 Nord DNS", "TCP", dns, TcpPorts, NotTunnel));
+                r.Add(rule("UDP IPv4", "UDP", PublicV4NoDns, UdpOpen, NotTunnel)); r.Add(rule("UDP IPv4 Nord DNS", "UDP", dns, UdpOpenNordDns, NotTunnel));
+                r.Add(rule("ICMP IPv4", "icmpv4", PublicV4, null, NotTunnel));
+                r.Add(rule("TCP IPv6", "TCP", PublicV6, null, null)); r.Add(rule("UDP IPv6", "UDP", PublicV6, null, null)); r.Add(rule("ICMP IPv6", "icmpv6", PublicV6, null, null));
+            }
+            return r;
+        }
+        // "a-b,c-d" IPv4 ranges without some single addresses
+        public static string Subtract(string ranges, IEnumerable<string> ips)
+        {
+            Func<string, uint> v = s => { var b = IPAddress.Parse(s).GetAddressBytes(); return (uint)(b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3]); };
+            Func<uint, string> t = x => new IPAddress(new[] { (byte)(x >> 24), (byte)(x >> 16), (byte)(x >> 8), (byte)x }).ToString();
+            var list = ranges.Split(',').Select(r => { var p = r.Split('-'); return new[] { v(p[0]), v(p[1]) }; }).ToList();
+            foreach (var x in ips.Select(v).OrderBy(x => x))
+            {
+                var nl = new List<uint[]>();
+                foreach (var r in list)
+                {
+                    if (x < r[0] || x > r[1]) { nl.Add(r); continue; }
+                    if (x > r[0]) nl.Add(new[] { r[0], x - 1 });
+                    if (x < r[1]) nl.Add(new[] { x + 1, r[1] });
+                }
+                list = nl;
+            }
+            return string.Join(",", list.Select(r => t(r[0]) + "-" + t(r[1])));
+        }
+        // the 1.0 rules (12): found on PCs that had 1.0's kill switch -> "Upgrade kill switch"
+        public static List<FwRule> Legacy()
         {
             var r = new List<FwRule>();
             foreach (var it in new[] { new[] { "wireless", "Wi-Fi" }, new[] { "lan", "wired" } })
@@ -60,9 +106,13 @@ namespace HallowVPN
         }
         public static readonly string[] Limits = {
             "It works by connection type (Wi-Fi / wired) and address, not by program - Windows Firewall rules can't tell which app sends what through the VPN.",
-            "IKEv2 to any VPN server (UDP 500 and 4500) and DNS lookups (port 53) still go out, so Windows can find and reach the server.",
-            "Your home network, Tailscale addresses and link-local addresses stay reachable.",
-            "Only TCP, UDP and ICMP are blocked; rarer IP protocols are not.",
+            "IKEv2 (UDP 500 and 4500) and NordLynx (UDP 51820) can still reach ANY address: limiting them to the server you use would mean changing the rules - and so asking Windows (UAC) - every time you switch servers.",
+            "DNS (port 53) to public addresses goes only to NordVPN's two DNS servers. Your router's DNS is a private address, so Windows can still look up Nord's servers before the VPN is up. If your network uses a PUBLIC DNS server (say 1.1.1.1), IKEv2 can't look up its server while the kill switch is on - use NordLynx (it connects by address) or set that network's DNS back to automatic.",
+            "All public IPv6 is blocked (Nord's IKEv2 and NordLynx carry IPv4 only), DNS included.",
+            "Your home network, Tailscale addresses and link-local addresses stay reachable, and so does the NordLynx tunnel itself (its address 10.5.0.2 is left out).",
+            "Only TCP, UDP and ICMP are blocked; rarer IP protocols are not (IKEv2 needs ESP, and one rule per protocol would be hundreds of rules).",
+            "Windows Firewall has no rule order: a block always wins over an allow, so this is done by blocking everything else - no app's own \"allow\" rule can punch through it.",
+            "Covered: Wi-Fi and wired. A mobile-broadband (cellular) adapter is a separate type in Windows - not covered or tested.",
             "It only works while Windows Firewall is on.",
             "While it's installed, no VPN = no internet - also for games. So \"disconnect while gaming\" switches to a low-ping server instead, and Home mode (Tailscale) needs it removed first." };
 
@@ -74,20 +124,27 @@ namespace HallowVPN
         }
         public static int ElevatedOn(StringBuilder log)
         {
-            ElevatedOff(log);
+            ElevatedOff(log);   // the 1.0 rules too: installing = upgrading
             foreach (var r in Rules()) if (Netsh(r.AddArgs(), log) != 0) { log.AppendLine("failed: " + r.Name); ElevatedOff(log); return 2; }
             return 0;
         }
         public static int ElevatedOff(StringBuilder log)
         {
-            foreach (var r in Rules()) Netsh(r.DeleteArgs(), log);   // "no rules match" is fine
+            foreach (var r in Rules().Concat(Legacy())) Netsh(r.DeleteArgs(), log);   // "no rules match" is fine
             return 0;
+        }
+        // how many of these rule names are in netsh's rule list (whole names only)
+        public static int Count(string netshOutput, IEnumerable<FwRule> rules)
+        {
+            var names = new HashSet<string>(System.Text.RegularExpressions.Regex.Matches(netshOutput ?? "", "^[^:\\r\\n]+:\\s+(" + System.Text.RegularExpressions.Regex.Escape(Prefix) + " - [^\\r\\n]+?)\\s*$", System.Text.RegularExpressions.RegexOptions.Multiline).Cast<System.Text.RegularExpressions.Match>().Select(m => m.Groups[1].Value));
+            return rules.Count(r => names.Contains(r.Name));
         }
     }
 
     public interface IFirewall
     {
         int InstalledRules();          // how many of the kill switch rules exist (read-only)
+        int OldRules();                // how many of the 1.0 rules exist (read-only) - "Upgrade kill switch"
         bool? FirewallOn();            // all three profiles on? null = couldn't tell (read-only)
         string Install();              // UAC -> rules added; null = done
         string Remove();               // UAC -> rules removed; null = done
@@ -95,9 +152,10 @@ namespace HallowVPN
     public class FakeFirewall : IFirewall
     {
         public readonly List<string> Calls = new List<string>(); public bool Cancel; public bool? On = true; public HashSet<string> Rules = new HashSet<string>();
-        public int InstalledRules() { return Rules.Count; }
+        public int InstalledRules() { return KillSwitch.Rules().Count(r => Rules.Contains(r.Name)); }
+        public int OldRules() { return KillSwitch.Legacy().Count(r => Rules.Contains(r.Name)); }
         public bool? FirewallOn() { return On; }
-        public string Install() { Calls.Add("install"); if (Cancel) return Elevated.Cancelled; foreach (var r in KillSwitch.Rules()) { r.AddArgs(); Rules.Add(r.Name); } return null; }
+        public string Install() { Calls.Add("install"); if (Cancel) return Elevated.Cancelled; Rules.Clear(); foreach (var r in KillSwitch.Rules()) { r.AddArgs(); Rules.Add(r.Name); } return null; }
         public string Remove() { Calls.Add("remove"); if (Cancel) return Elevated.Cancelled; Rules.Clear(); return null; }
     }
     public class WindowsFirewall : IFirewall
@@ -109,7 +167,12 @@ namespace HallowVPN
         }
         public int InstalledRules()
         {
-            try { int code; var o = Run("advfirewall firewall show rule name=all dir=out", out code); return KillSwitch.Rules().Count(r => o.IndexOf(r.Name, StringComparison.Ordinal) >= 0); }
+            try { int code; var o = Run("advfirewall firewall show rule name=all dir=out", out code); return KillSwitch.Count(o, KillSwitch.Rules()); }
+            catch { return 0; }
+        }
+        public int OldRules()
+        {
+            try { int code; var o = Run("advfirewall firewall show rule name=all dir=out", out code); return KillSwitch.Count(o, KillSwitch.Legacy()); }
             catch { return 0; }
         }
         public bool? FirewallOn()
@@ -215,17 +278,20 @@ namespace HallowVPN
     public static class Elevated
     {
         public const string Cancelled = "Windows didn't get permission (UAC was cancelled), so nothing changed.";
-        public static readonly string[] Commands = { "killswitch-on", "killswitch-off", "ca-install", "ca-remove" };
-        public static string Run(string cmd)
+        public static readonly string[] Commands = { "killswitch-on", "killswitch-off", "ca-install", "ca-remove", "wg-up", "wg-down" };
+        // only wg-up takes an argument: "<server ip> <server public key>" (checked here and again in the elevated copy)
+        public static bool ArgOk(string cmd, string arg) { return cmd == "wg-up" ? NordLynx.ValidUpArg(arg) : arg == null; }
+        public static string Run(string cmd, string arg = null)
         {
-            if (!Commands.Contains(cmd)) return "unknown elevated command";
+            if (!Commands.Contains(cmd) || !ArgOk(cmd, arg)) return "unknown elevated command";
             if (VpnSettings.TestDir != null || Snap.On) return "Not in a test copy.";
             try
             {
-                var psi = new ProcessStartInfo(Assembly.GetExecutingAssembly().Location, "--elevated " + cmd) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
+                var psi = new ProcessStartInfo(Assembly.GetExecutingAssembly().Location, "--elevated " + cmd + (arg != null ? " \"" + arg + "\"" : "")) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
                 using (var p = Process.Start(psi))
                 {
                     if (!p.WaitForExit(120000)) return "Windows took too long.";
+                    if (p.ExitCode == 6) return "Windows asked with another account's permission, so the NordLynx key (encrypted for YOUR Windows account) couldn't be read. NordLynx needs your own account to be an administrator.";
                     return p.ExitCode == 0 ? null : "It didn't work (code " + p.ExitCode + "). Details: " + Path.Combine(VpnSettings.Dir, "elevated.log");
                 }
             }
@@ -233,9 +299,9 @@ namespace HallowVPN
             catch (Exception e) { return "Couldn't ask Windows for permission: " + e.Message; }
         }
         // "HallowVPN.exe --elevated <cmd>": only the four fixed commands, never in a test folder; a short log in the data folder
-        public static int RunHere(string cmd)
+        public static int RunHere(string cmd, string arg = null)
         {
-            if (VpnSettings.TestDir != null || !Commands.Contains(cmd)) return 5;
+            if (VpnSettings.TestDir != null || !Commands.Contains(cmd) || !ArgOk(cmd, arg)) return 5;
             var log = new StringBuilder(DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss") + " " + cmd + Environment.NewLine); int code;
             try
             {
@@ -244,6 +310,8 @@ namespace HallowVPN
                     case "killswitch-on": code = KillSwitch.ElevatedOn(log); break;
                     case "killswitch-off": code = KillSwitch.ElevatedOff(log); break;
                     case "ca-install": code = NordCa.ElevatedInstall(log); break;
+                    case "wg-up": code = WireGuardTunnel.ElevatedUp(arg, log); break;
+                    case "wg-down": code = WireGuardTunnel.ElevatedDown(log); break;
                     default: code = NordCa.ElevatedRemove(log); break;
                 }
             }

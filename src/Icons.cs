@@ -27,6 +27,7 @@ namespace HallowVPN
             { "Don't trust this network", "xmark" }, { "Show my real IP", "location-dot" }, { "Run the leak test again", "magnifying-glass" }, { "Recreate the VPN profile", "wrench" },
             { "Refresh the server list", "arrows-rotate" }, { "Best for torrents", "share-nodes" }, { "Switch to the fastest", "bolt" }, { "Test connection to Fastest", "power-off" }, { "Test again", "arrows-rotate" },
             { "Open Home", "house" }, { "Open the Connection page", "power-off" },
+            { "Upgrade kill switch (asks Windows)", "shield-halved" }, { "Get my NordLynx key", "key" }, { "Install WireGuard (asks Windows)", "download" },
         };
         static readonly string[][] Prefixes = { new[] { "Update to", "download" }, new[] { "Connect", "power-off" }, new[] { "Install", "shield-halved" }, new[] { "Remove", "xmark" }, new[] { "Disconnect", "link-slash" } };        public static string ForLabel(string label)
         {

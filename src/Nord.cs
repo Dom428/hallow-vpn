@@ -34,6 +34,7 @@ namespace HallowVPN
         [DataMember] public int CountryId;
         [DataMember] public double Lat, Lon;
         [DataMember] public List<string> Groups;   // "Standard VPN servers", "P2P", ...
+        [DataMember] public string WgKey;          // 1.2: its NordLynx (WireGuard) public key, from technologies: wireguard_udp, metadata public_key
         public int Ping = -1;                      // ms, measured by this PC (-1 = not measured / no answer)
         public string Short { get { return Host == null ? "" : Host.Split('.')[0]; } }   // us1234
         public Server Copy() { var c = (Server)MemberwiseClone(); c.Groups = Groups == null ? new List<string>() : Groups.ToList(); return c; }
@@ -139,6 +140,12 @@ namespace HallowVPN
                     var groups = Get(o, "groups") as object[];
                     if (groups != null) foreach (var g in groups) { var t = Str(g, "title"); if (t != null) s.Groups.Add(t); }
                     if (s.Station != null && !Regex.IsMatch(s.Station, "^\\d{1,3}(\\.\\d{1,3}){3}$")) s.Station = null;
+                    if (tech != null)
+                        foreach (var t in tech.Where(x => Str(x, "identifier") == "wireguard_udp"))
+                        {
+                            var md = Get(t, "metadata") as object[];
+                            if (md != null) foreach (var m in md) if (Str(m, "name") == "public_key" && NordLynx.ValidKey(Str(m, "value"))) s.WgKey = Str(m, "value");
+                        }
                     r.Add(s);
                 }
                 catch { }

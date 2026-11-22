@@ -57,8 +57,10 @@ namespace HallowVPN
         [DataMember] public int LastDialCode;                  // Windows' error number of the last failed connect (for "Fix my connection")
         [DataMember] public string LastDialWhen;
         [DataMember] public string LastServer;                 // the last server connected to (for the checks and recreating the profile)
+        // 1.2
+        [DataMember] public string Protocol = Protocols.Auto;   // auto (NordLynx when set up, else IKEv2) / nordlynx / ikev2
 
-        [OnDeserializing] void Defaults(StreamingContext c) { UseHallowIcon = true; UseHallowAccent = true; Look = "follow"; AutoReconnect = true; LastTarget = "fastest"; SplitMode = Split.All; GameMode = Games.ModeOff; HomeAllowLan = true; TrustWired = true; }
+        [OnDeserializing] void Defaults(StreamingContext c) { UseHallowIcon = true; UseHallowAccent = true; Look = "follow"; AutoReconnect = true; LastTarget = "fastest"; SplitMode = Split.All; GameMode = Games.ModeOff; HomeAllowLan = true; TrustWired = true; Protocol = Protocols.Auto; }
 
         public static VpnSettings Load()
         {
@@ -85,6 +87,7 @@ namespace HallowVPN
             if (TrustedNetworks == null) TrustedNetworks = new List<string>();
             TrustedNetworks = TrustedNetworks.Where(x => !string.IsNullOrEmpty(x) && x.Length <= 32).Distinct().Take(50).ToList();
             if (LastServer != null && !Nord.ValidHost(LastServer)) LastServer = null;
+            Protocol = Protocols.Fix(Protocol);
             if (!Split.Modes.Contains(SplitMode)) SplitMode = Split.All;
             if (GameMode != Games.ModePause && GameMode != Games.ModeLowPing) GameMode = Games.ModeOff;
             if (Target.Parse(LastTarget) == null) LastTarget = "fastest";

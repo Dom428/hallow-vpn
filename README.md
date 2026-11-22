@@ -1,12 +1,45 @@
 # Hallow VPN
 
-**A game-aware VPN client for your NordVPN subscription - on Windows' own IKEv2 VPN client.**
+**A game-aware VPN client for your NordVPN subscription - on Windows' own IKEv2 VPN client, or NordLynx through the official WireGuard for Windows.**
 
 Part of the Hallow family of Windows apps. Hallow VPN uses the NordVPN subscription you already have, through the VPN client
-built into Windows: **no NordVPN app, no drivers, nothing else to download, no admin** for everyday use. It knows when you're
+built into Windows: **no NordVPN app, no drivers of its own, no admin** for everyday IKEv2 use (NordLynx, optional, uses the
+official WireGuard for Windows and asks Windows on each connect). It knows when you're
 playing: it can pause the VPN for your game and reconnect after, or move you to a low-ping server.
 
 ![Connected (made-up data)](docs/connect.png)
+
+## New in 1.2: NordLynx, and a tighter kill switch
+
+- **NordLynx (Nord's WireGuard)** as a second protocol, through the **official WireGuard for Windows**: a **Protocol** choice -
+  *Automatic* (NordLynx when it's set up, else IKEv2), *NordLynx* or *IKEv2* - on the new NordLynx page.
+  - **WireGuard for Windows** is detected (`%ProgramFiles%\WireGuard\wireguard.exe`). If it's missing, *Install WireGuard* downloads
+    the official MSI from `download.wireguard.com` **only when you click**, checks that its **BLAKE2b-256 hash** matches the list
+    WireGuard publishes (`latest.sig`) and that its **Authenticode signature is valid and from WireGuard LLC**, then runs it - Windows
+    asks (UAC), your click.
+  - **Your NordLynx key**: paste a Nord **access token** (Nord Account > NordVPN > Set up NordVPN manually > Generate new token);
+    Hallow VPN asks Nord once (`GET api.nordvpn.com/v1/users/services/credentials`, basic auth `token:<access token>`) for
+    `nordlynx_private_key`. Token and key are kept in `%APPDATA%\HallowVPN\nordlynx.dat`, **DPAPI-encrypted for your Windows
+    user**; never logged, never in status / the pipe / crash reports / a command line.
+  - **Connecting** uses WireGuard's documented CLI (`wireguard.exe /installtunnelservice <conf>`, `/uninstalltunnelservice
+    HallowNordLynx`). A WireGuard tunnel is a Windows service, so **each NordLynx connect and disconnect asks Windows (UAC)**: Hallow
+    VPN runs itself elevated with one fixed command (`wg-up <server ip> <server key>` / `wg-down`); that copy - still you - decrypts
+    the key, writes the `.conf` into `%LOCALAPPDATA%\HallowVPN\wg` (only you, SYSTEM and Administrators can open it), starts the
+    tunnel, waits until it runs and **deletes the `.conf`**.
+  - The `.conf`: Address `10.5.0.2/32`, DNS `103.86.96.100, 103.86.99.100`, the server's public key from Nord's server list
+    (`technologies` > `wireguard_udp` > `metadata` > `public_key` - checked against a saved answer), Endpoint `<station>:51820`,
+    AllowedIPs `0.0.0.0/0, ::/0`.
+  - Status, connected time, health, the leak test, P2P picks and auto-connect work for both. status.json says `protocol:
+    "NordLynx"` and **`adapter: "HallowNordLynx"`** (IKEv2: `"Hallow VPN"`), which is exactly what Hallow Torrents binds to - no
+    Torrents change needed.
+
+  ![NordLynx (made-up data)](docs/nordlynx.png)
+- **Kill switch v2** (still Windows Firewall rules only, no service): **DNS (53) only to NordVPN's DNS servers**; **all public
+  IPv6 blocked** (every port); **UDP 51820 open** for NordLynx; the NordLynx tunnel's own address (10.5.0.2) is never blocked; UDP
+  500 / 4500 stay open to any server. 16 rules named `Hallow VPN kill switch - v2 ...`. PCs with the 1.0 rules get **Upgrade kill
+  switch** (one UAC click swaps them).
+
+  ![Kill switch upgrade (made-up data)](docs/killswitch-upgrade.png)
 
 ## New in 1.1: first connect just works, and nothing leaks
 
@@ -80,9 +113,10 @@ playing: it can pause the VPN for your game and reconnect after, or move you to 
   `playing`. When a game starts: **do nothing**, **disconnect and reconnect 10 s after it closes**, or **stay connected on a low-ping
   server** (and back to your choice after). Nothing pops up while you play - notifications are held.
 - **Kill switch** (optional, **asks Windows**): Windows Firewall outbound **block** rules on Wi-Fi and wired connections for TCP, UDP
-  and ICMP to public internet addresses, **except** IKEv2 to the VPN server (UDP 500 / 4500) and DNS (port 53). The VPN's own
-  connection, your home network, Tailscale's 100.64.0.0/10 and link-local addresses stay reachable. Installing and removing it
-  runs Hallow VPN elevated with one fixed command after Windows' UAC prompt - the user clicks. See the limits below.
+  and ICMP to public internet addresses, **except** IKEv2 (UDP 500 / 4500) and NordLynx (UDP 51820) to any server, and DNS only to
+  NordVPN's two DNS servers; all public IPv6 is blocked. The VPN's own connection, the NordLynx tunnel (10.5.0.2), your home network
+  (your router's DNS included), Tailscale's 100.64.0.0/10 and link-local addresses stay reachable. Installing, upgrading and
+  removing it runs Hallow VPN elevated with one fixed command after Windows' UAC prompt - the user clicks. See the limits below.
 - **Home** (Tailscale): if Tailscale is installed, "Route through my home" lists only the machines Tailscale reports as **exit-node
   capable** and switches with `tailscale set --exit-node=<ip>` (and back with `--exit-node=`). It uses your **home** connection -
   websites see your home's address, and it **doesn't hide your traffic from your home internet provider**.
@@ -91,7 +125,9 @@ playing: it can pause the VPN for your game and reconnect after, or move you to 
   (`connected`, `connecting`, `server`, `country`, `protocol`, `killSwitch`, `splitMode`, `since` - Hallow Torrents reads these;
   1.1 adds `p2p` (true while connected to one of Nord's P2P servers - so Hallow Torrents can prefer them later), `leakCheck`
   (`ok` / `warn` / `fail`, or null when not connected / not checked yet), `leakCheckAt`, `setupDone`, `untrustedNetwork` and
-  `autoConnect`; never an address, a Wi-Fi name or the credentials),
+  `autoConnect`; 1.2 adds `adapter` (`Hallow VPN` or `HallowNordLynx` while connected), `protocolChoice` and `killSwitchUpgrade`,
+  and `protocol` can be `NordLynx`; never an address, a Wi-Fi name, the credentials, the access token or the key; the pipe also
+  has `protocol [auto|nordlynx|ikev2]`),
   Hallow Hub's tray menu (Hub 2.13+ lists any app answering `menu`), the Hallow accent and **light / dark mode** from
   `%APPDATA%\Hallow\theme.json` (or its own Look setting), crash reports kept on this PC, and the GitHub updater (checks the
   download's SHA-256).
@@ -101,10 +137,21 @@ playing: it can pause the VPN for your game and reconnect after, or move you to 
 ## Limits (honest)
 
 - **Split tunnelling is route-based, not per app** (see above). With "Only these", DNS lookups use your normal connection.
-- **Kill switch**: Windows Firewall block rules always win over allow rules, so it's done by blocking everything else. Rarer IP
-  protocols (not TCP / UDP / ICMP) aren't blocked; DNS lookups (port 53) and IKEv2 (UDP 500 / 4500) to any address still go out; it
-  works only while Windows Firewall is on. While it's installed, **no VPN = no internet** - so "disconnect while gaming" becomes
-  "low-ping server", and Home mode needs it removed first.
+- **Kill switch**: Windows Firewall has no rule order and a block always wins over an allow, so it's done by blocking everything
+  else. IKEv2 (UDP 500 / 4500) and NordLynx (UDP 51820) can reach **any** address: limiting them to the server in use would mean
+  changing the rules - and a UAC prompt - on every server change. Rarer IP protocols (not TCP / UDP / ICMP) aren't blocked (IKEv2
+  needs ESP; one rule per protocol would be hundreds). If your network's DNS server is a **public** address (not your router),
+  IKEv2 can't look up its server while the kill switch is on - NordLynx connects by address, or set that network's DNS to automatic.
+  Mobile-broadband (cellular) adapters aren't covered or tested. It works only while Windows Firewall is on. While it's installed,
+  **no VPN = no internet** - so "disconnect while gaming" becomes "low-ping server", and Home mode needs it removed first.
+- **NordLynx asks Windows (UAC) on every connect and disconnect** - WireGuard's tunnels are Windows services, and Hallow apps don't
+  install a service of their own. So while a game runs Hallow VPN never starts, switches or pauses NordLynx (it waits), game modes
+  don't apply while NordLynx is connected, and *Automatic* uses IKEv2 for anything Hallow VPN does by itself. WireGuard's own
+  no-admin option (`HKLM\Software\WireGuard\LimitedOperatorUI` = 1 plus the "Network Configuration Operators" group) is a system
+  change that only covers WireGuard's own window, so Hallow VPN only explains it. If Windows' prompt is approved with **another**
+  account, the key (DPAPI, your account) can't be read: NordLynx needs your own account to be an administrator.
+- **NordLynx** always tunnels everything (split tunnel "Only these" is IKEv2's). The WireGuard installer's hash list is fetched
+  over HTTPS; its own signify signature isn't checked (.NET has no Ed25519) - the Authenticode check is the strong one.
 - **DNS**: Windows may still send a lookup to another network's DNS (your router) as a fallback if Nord's DNS is slow - that's
   Windows' smart multi-homed name resolution, and turning it off is a Group Policy that needs admin, so Hallow VPN doesn't. The
   leak test says so when it applies. The phonebook keys take effect on the next connect.
@@ -143,6 +190,12 @@ of "Fix my connection", and in the test copy: `connect p2p`, the leak test, auto
 test and the profile repair. The only real calls are read-only: `RasEnumConnections`, `RasDial` against an empty test phonebook
 (no entry, nothing dialled), `RasGetConnectionStatistics` with no connection, the firewall rule list, the certificate store,
 `tailscale status --json`, the network interfaces and their metrics, and the Native Wifi current connection (the name is never printed).
+1.2 adds BLAKE2b (RFC 7693's vectors), WireGuard's published list (saved once) and the installer checks (made-up files with a fake
+signer, plus - when given - the real installer downloaded once and **never run**), the NordLynx key in DPAPI and its `.conf` (with
+injection refused), Nord's WireGuard keys from a saved public answer (the credentials endpoint is never called - a fake answers), the
+v2 kill switch rules (built and compared, never added), the elevated helper refusing anything odd, and in the test copy: NordLynx
+connect / status / leak test / health with a fake tunnel, no game-time reconnects, Automatic choosing IKEv2 for auto-connects, and
+the kill switch upgrade with a fake firewall.
 
 ## Credits
 

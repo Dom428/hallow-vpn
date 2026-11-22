@@ -111,11 +111,11 @@ namespace HallowVPN.Tests
         static void DiagTests()
         {
             Func<string, IPAddress[]> res = h => h == "nowhere.nordvpn.com" ? new IPAddress[0] : new[] { IPAddress.Parse("203.0.113.9") };
-            var good = new DiagInput { Account = true, CaInstalled = true, CaChecked = true, PbkText = Pbk.Apply(Pbk.SampleEntry(VpnScript.Entry, "nl1.nordvpn.com"), VpnScript.Entry, Pbk.Expected(Split.All)), SplitMode = Split.All, Host = "nl1.nordvpn.com", Resolve = res, Ping = s => 21, KillSwitchAll = 12 };
+            var good = new DiagInput { Account = true, CaInstalled = true, CaChecked = true, PbkText = Pbk.Apply(Pbk.SampleEntry(VpnScript.Entry, "nl1.nordvpn.com"), VpnScript.Entry, Pbk.Expected(Split.All)), SplitMode = Split.All, Host = "nl1.nordvpn.com", Resolve = res, Ping = s => 21, KillSwitchAll = 12, ProtocolChoice = Protocols.Ikev2 };
             var r = Diagnosis.Run(good);
             Ok(r.Select(x => x.Id).SequenceEqual(new[] { "account", "certificate", "profile", "server", "lasterror", "blockers" }), "the checks run in the briefed order");
             Ok(r.All(x => x.Status == "ok") && Diagnosis.Summary(r) == "Everything checks out.", "all good: green ticks");
-            var b = new DiagInput { Account = false, CaInstalled = false, CaChecked = true, PbkText = Pbk.SampleEntry(VpnScript.Entry, "nl1.nordvpn.com"), SplitMode = Split.All, Host = "nowhere.nordvpn.com", Resolve = res, Ping = s => -1, LastDialCode = 13801, HomeNode = "home-server", KillSwitchRules = 5, KillSwitchAll = 12 };
+            var b = new DiagInput { Account = false, CaInstalled = false, CaChecked = true, PbkText = Pbk.SampleEntry(VpnScript.Entry, "nl1.nordvpn.com"), SplitMode = Split.All, Host = "nowhere.nordvpn.com", Resolve = res, Ping = s => -1, LastDialCode = 13801, HomeNode = "home-server", KillSwitchRules = 5, KillSwitchAll = 12, ProtocolChoice = Protocols.Ikev2 };
             r = Diagnosis.Run(b);
             Ok(r[0].Status == "fail" && r[0].Text.Contains("Set up NordVPN manually"), "no credentials: where to find them");
             Ok(r[1].Status == "fail" && r[1].Text.Contains("13801"), "no certificate: says it's what causes 13801");

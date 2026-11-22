@@ -10,6 +10,12 @@ if ($ks -gt 0 -and (Test-Path $exe)) {
         try { $p = Start-Process $exe -ArgumentList '--elevated', 'killswitch-off' -Verb RunAs -WindowStyle Hidden -PassThru -Wait } catch { }
     }
 }
+# NordLynx (1.2): its WireGuard tunnel service, if Hallow VPN left one set up - removing it needs admin (Windows asks)
+if ((Get-Service 'WireGuardTunnel$HallowNordLynx' -ErrorAction SilentlyContinue) -and (Test-Path $exe)) {
+    if ([System.Windows.Forms.MessageBox]::Show("Hallow VPN's NordLynx tunnel is still set up in WireGuard.`n`nRemove it now? Windows will ask for permission.", 'Hallow VPN', 'YesNo', 'Question') -eq 'Yes') {
+        try { Start-Process $exe -ArgumentList '--elevated', 'wg-down' -Verb RunAs -WindowStyle Hidden -Wait } catch { }
+    }
+}
 if (Get-Process HallowVPN -ErrorAction SilentlyContinue) { try { & $exe --cmd quit | Out-Null; Start-Sleep -Milliseconds 1500 } catch { } }
 Get-Process HallowVPN -ErrorAction SilentlyContinue | Stop-Process -Force
 # the per-user VPN connection (no admin): hang up, then remove it
@@ -19,10 +25,11 @@ Start-Sleep -Milliseconds 600
 Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'HallowVPN' -ErrorAction SilentlyContinue
 foreach ($dir in [Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Desktop')) { Remove-Item (Join-Path $dir 'Hallow VPN.lnk') -ErrorAction SilentlyContinue }
 Remove-Item 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\HallowVPN' -Recurse -ErrorAction SilentlyContinue
-Remove-Item (Join-Path $env:APPDATA 'HallowVPN') -Recurse -Force -ErrorAction SilentlyContinue   # settings, cache and the encrypted service credentials
+Remove-Item (Join-Path $env:APPDATA 'HallowVPN') -Recurse -Force -ErrorAction SilentlyContinue   # settings, cache and the encrypted service credentials / NordLynx key
+Remove-Item (Join-Path $env:LOCALAPPDATA 'HallowVPN') -Recurse -Force -ErrorAction SilentlyContinue   # 1.2: the WireGuard installer download and the (empty) tunnel settings folder
 Start-Process cmd.exe -ArgumentList "/c timeout /t 2 /nobreak >nul & rmdir /s /q `"$dest`"" -WindowStyle Hidden
 $left = (netsh advfirewall firewall show rule name=all dir=out | Select-String -SimpleMatch 'Hallow VPN kill switch - ').Count
 $msg = "Hallow VPN is uninstalled."
 if ($left -gt 0) { $msg += "`n`nThe kill switch's firewall rules are still there ($left). Remove the rules named 'Hallow VPN kill switch - ...' in Windows Defender Firewall (advanced settings), or reinstall Hallow VPN and remove it there." }
-$msg += "`n`nNordVPN's root certificate stays installed if you installed it (other VPN apps use it too)."
+$msg += "`n`nNordVPN's root certificate and WireGuard for Windows stay installed if you installed them (remove WireGuard in Windows' Apps list if you like)."
 [System.Windows.Forms.MessageBox]::Show($msg, 'Hallow VPN') | Out-Null

@@ -27,6 +27,7 @@ WHAT IT DOES
   playing runs, it can disconnect (and reconnect after) or move to a low-ping server. It never
   pops anything up during a game.
 - Kill switch (optional, asks Windows): firewall rules that block traffic outside the VPN.
+- NordLynx (optional): Nord's WireGuard through the official WireGuard for Windows.
 - Home: route through a computer at home with Tailscale (if Tailscale is installed).
 - Hallow family: Hallow Hub's tray menu lists it, the Hallow accent, light / dark, status for
   other apps (Hallow Torrents can read it).
@@ -36,14 +37,27 @@ GOOD TO KNOW (honest limits)
   per-app splitting needs a network driver, which Hallow VPN doesn't install. "Everything except
   games" works by pausing the VPN while a game runs.
 - The kill switch is Windows Firewall rules (block TCP / UDP / ICMP to public addresses on Wi-Fi and
-  wired, except IKEv2's UDP 500 / 4500 and DNS on port 53). Rarer IP protocols aren't blocked, it
+  wired, except IKEv2's UDP 500 / 4500, NordLynx's UDP 51820, and DNS only to NordVPN's DNS servers;
+  all public IPv6 is blocked). Rarer IP protocols aren't blocked, it
   needs Windows Firewall on, and while it's installed no VPN = no internet. Installing and removing
   it asks Windows for permission (UAC).
+- NordLynx asks Windows (UAC) on every connect and disconnect, so Hallow VPN never starts or
+  switches it by itself during a game, and game modes don't apply while it's connected.
 - Home mode uses your home connection: it doesn't hide your traffic from your home internet
   provider.
 - Quitting Hallow VPN leaves the VPN connection as it is (Windows keeps it).
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
+
+WHAT'S NEW IN 1.2 - NordLynx, and a tighter kill switch
+- NordLynx (Nord's WireGuard) next to IKEv2, through the official WireGuard for Windows. Protocol:
+  Automatic / NordLynx / IKEv2 (NordLynx page). "Install WireGuard" downloads the official installer
+  from download.wireguard.com only when you click, checks WireGuard's published hash and its
+  WireGuard LLC signature, then Windows asks. Paste a Nord ACCESS TOKEN once for your NordLynx key
+  (kept encrypted for your Windows user). Each NordLynx connect / disconnect asks Windows (UAC):
+  WireGuard's tunnels are Windows services. Never during a game.
+- Kill switch 1.2: DNS only to NordVPN's DNS servers, all public IPv6 blocked, NordLynx allowed.
+  Had the 1.0 kill switch? Click "Upgrade kill switch" (Windows asks once).
 
 WHAT'S NEW IN 1.1 - first connect just works, and nothing leaks
 - First-run setup: credentials, Nord's certificate, then a test connection - each with a green

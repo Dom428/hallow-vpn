@@ -19,6 +19,7 @@ namespace HallowVPN
         public string Host; public Func<string, IPAddress[]> Resolve; public Func<Server, int> Ping;
         public int LastDialCode; public string LastDialWhen; public string HomeNode; public int KillSwitchRules, KillSwitchAll; public bool? FirewallOn;
         public bool Connected;
+        public string ProtocolChoice = Protocols.Auto; public bool WgInstalled, NordLynxKey, OldKillSwitch;   // 1.2
     }
 
     public static class Diagnosis
@@ -36,6 +37,18 @@ namespace HallowVPN
             else if (i.CaInstalled) { s.Status = "ok"; s.Text = "Installed - Windows trusts Nord's servers."; }
             else { s.Status = "fail"; s.Text = "Missing - this is what causes error 13801. Click \"Install Nord's certificate\" (Windows asks for permission; that's your click)."; }
             r.Add(s);
+
+            if (i.ProtocolChoice != Protocols.Ikev2)
+            {
+                s = new DiagStep("nordlynx", "NordLynx (WireGuard)");
+                if (i.WgInstalled && i.NordLynxKey) { s.Status = "ok"; s.Text = "WireGuard for Windows is installed and your NordLynx key is saved. Each NordLynx connect and disconnect asks Windows (UAC)."; }
+                else
+                {
+                    s.Status = i.ProtocolChoice == Protocols.NordLynx ? "fail" : "skip";
+                    s.Text = (!i.WgInstalled ? "WireGuard for Windows isn't installed. " : "") + (!i.NordLynxKey ? "No NordLynx key yet (paste a Nord access token). " : "") + (i.ProtocolChoice == Protocols.NordLynx ? "Set it up on the NordLynx page, or pick IKEv2 there." : "Optional - Automatic uses IKEv2 until it's set up on the NordLynx page.");
+                }
+                r.Add(s);
+            }
 
             s = new DiagStep("profile", "The \"Hallow VPN\" connection in Windows");
             if (i.PbkText == null) { s.Status = i.Connected ? "warn" : "skip"; s.Text = "Not created yet - it's made on the first connect (no admin)."; s.Repair = "profile"; }
@@ -73,6 +86,7 @@ namespace HallowVPN
             if (i.HomeNode != null) { s.Status = "fail"; notes.Add("Tailscale's exit node (" + i.HomeNode + ") is in use - the two don't stack. Stop it on the Home page."); }
             if (i.KillSwitchRules > 0 && i.KillSwitchRules < i.KillSwitchAll) { if (s.Status == "ok") s.Status = "warn"; notes.Add("The kill switch is only partly installed (" + i.KillSwitchRules + " of " + i.KillSwitchAll + " rules) - install it again or remove it on the Kill switch page."); }
             else if (i.KillSwitchRules >= i.KillSwitchAll && i.KillSwitchAll > 0) notes.Add("The kill switch is on: it leaves IKEv2 (UDP 500 / 4500) and DNS open, so it doesn't stop the VPN from connecting - but there's no internet until it does.");
+            if (i.OldKillSwitch) { if (s.Status == "ok") s.Status = "warn"; notes.Add("The kill switch is Hallow VPN 1.0's: it blocks NordLynx (UDP 51820) and lets DNS go to any address. Upgrade it on the Kill switch page (Windows asks once)."); }
             if (i.FirewallOn == false && i.KillSwitchRules > 0) notes.Add("Windows Firewall is off for some network, so the kill switch can't work there.");
             if (notes.Count == 0) notes.Add("Nothing in the way.");
             s.Text = string.Join(" ", notes); r.Add(s);

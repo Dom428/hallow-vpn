@@ -10,7 +10,7 @@ $src = Join-Path $PSScriptRoot 'src'
 $out = Join-Path $PSScriptRoot 'HallowVPN.exe'
 $refs = "$wpf\PresentationFramework.dll", "$wpf\PresentationCore.dll", "$wpf\WindowsBase.dll", "$fw\System.Xaml.dll",
     "$fw\System.Windows.Forms.dll", "$fw\System.Drawing.dll", "$fw\System.Runtime.Serialization.dll", "$fw\System.Core.dll",
-    "$fw\System.IO.Compression.dll", "$fw\System.IO.Compression.FileSystem.dll", "$fw\System.Web.Extensions.dll", "$fw\System.Xml.dll", "$fw\System.Security.dll"
+    "$fw\System.IO.Compression.dll", "$fw\System.IO.Compression.FileSystem.dll", "$fw\System.Web.Extensions.dll", "$fw\System.Xml.dll", "$fw\System.Security.dll", "$fw\System.ServiceProcess.dll"
 $common = @('/nologo', '/optimize+', "/win32icon:$src\hallow.ico", "/resource:$src\Theme.xaml,HallowVPN.Theme.xaml") + ($refs | ForEach-Object { "/reference:$_" })
 $files = Get-ChildItem $src -Filter *.cs | ForEach-Object FullName
 & "$fw\csc.exe" @($common + @('/target:winexe', "/out:$out") + $files)

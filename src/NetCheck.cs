@@ -124,7 +124,7 @@ namespace HallowVPN
             {
                 if (n.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
                 var i = new NetIf { Name = n.Name, Description = n.Description, Up = n.OperationalStatus == OperationalStatus.Up };
-                i.Vpn = n.Name == VpnScript.Entry && n.NetworkInterfaceType == NetworkInterfaceType.Ppp;
+                i.Vpn = (n.Name == VpnScript.Entry && n.NetworkInterfaceType == NetworkInterfaceType.Ppp) || n.Name == NordLynx.Tunnel;
                 i.Wireless = n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211;
                 i.Tunnel = n.NetworkInterfaceType == NetworkInterfaceType.Tunnel || n.NetworkInterfaceType == NetworkInterfaceType.Ppp;
                 i.Wired = !i.Wireless && !i.Tunnel && (n.NetworkInterfaceType == NetworkInterfaceType.Ethernet || n.NetworkInterfaceType == NetworkInterfaceType.GigabitEthernet) && !Virtual(n.Description);

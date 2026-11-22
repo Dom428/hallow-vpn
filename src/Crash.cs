@@ -13,6 +13,7 @@ namespace HallowVPN
     {
         public static string Dir { get { return Path.Combine(VpnSettings.Dir, "crashes"); } }
         public static volatile string[] Secrets = new string[0];   // the Nord service username / password: never written into a report
+        public static volatile string[] Secrets2 = new string[0];  // 1.2: the NordLynx access token and private key, the same way
         static int writing;
 
         public static void Install()
@@ -36,7 +37,7 @@ namespace HallowVPN
                 sb.AppendLine();
                 sb.AppendLine(ex.ToString());   // type, message, stack, inner exceptions
                 var text = sb.ToString();
-                foreach (var sec in Secrets ?? new string[0]) if (!string.IsNullOrEmpty(sec) && sec.Length >= 4) text = text.Replace(sec, "<secret>");
+                foreach (var sec in (Secrets ?? new string[0]).Concat(Secrets2 ?? new string[0])) if (!string.IsNullOrEmpty(sec) && sec.Length >= 4) text = text.Replace(sec, "<secret>");
                 var name = now.ToString("yyyy-MM-dd HH-mm-ss"); var f = Path.Combine(Dir, name + ".txt");
                 for (int i = 2; File.Exists(f); i++) f = Path.Combine(Dir, name + " (" + i + ").txt");
                 File.WriteAllText(f, text, new UTF8Encoding(false));
