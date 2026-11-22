@@ -49,6 +49,11 @@ GOOD TO KNOW (honest limits)
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
 
+WHAT'S NEW IN 1.2.4 - Nord's encryption
+- Fixed error 13868: Windows offers old encryption by default and Nord's servers refuse it. The "Hallow VPN"
+  connection now uses AES-256-GCM, SHA-256 and DH group 14 (set on every connect, no admin).
+- Spaces copied along with the service password are removed (they gave error 691).
+
 WHAT'S NEW IN 1.2.3 - flags
 - Countries and servers show their flag instead of a two-letter code (hover for the code). The flags are built in,
   nothing is downloaded while you use the app.

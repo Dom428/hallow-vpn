@@ -24,7 +24,8 @@ namespace HallowVPN
         // null = fine; otherwise why it can't be service credentials
         public static string Check(string user, string pass)
         {
-            user = (user ?? "").Trim(); pass = pass ?? "";
+            // Nord's service usernames and passwords never contain spaces: a space copied along at either end gave error 691
+            user = (user ?? "").Trim(); pass = (pass ?? "").Trim();
             if (user.Length == 0 || pass.Length == 0) return "Paste both the service username and the service password.";
             if (user.Contains("@")) return "That looks like your Nord login (an email address). Hallow VPN needs the SERVICE credentials instead - they're on Nord's website under NordVPN > Set up NordVPN manually.";
             if (user.Length > 256 || pass.Length > 256) return "That's too long for a service username or password.";
@@ -49,7 +50,7 @@ namespace HallowVPN
                 var d = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<System.Collections.Generic.Dictionary<string, object>>(Encoding.UTF8.GetString(plain));
                 object u, p;
                 if (d == null || !d.TryGetValue("u", out u) || !d.TryGetValue("p", out p) || !(u is string) || !(p is string)) return null;
-                return new Credentials { User = (string)u, Pass = (string)p };
+                return new Credentials { User = ((string)u).Trim(), Pass = ((string)p).Trim() };   // older saves may carry a pasted space
             }
             catch { return null; }
             finally { if (plain != null) Array.Clear(plain, 0, plain.Length); }
@@ -63,9 +64,9 @@ namespace HallowVPN
             {
                 Directory.CreateDirectory(VpnSettings.Dir);
                 var tmp = FilePath + ".tmp";
-                File.WriteAllBytes(tmp, Protect(new Credentials { User = user.Trim(), Pass = pass }));
+                File.WriteAllBytes(tmp, Protect(new Credentials { User = user.Trim(), Pass = pass.Trim() }));
                 if (File.Exists(FilePath)) File.Replace(tmp, FilePath, null); else File.Move(tmp, FilePath);
-                Crash.Secrets = new[] { user.Trim(), pass };
+                Crash.Secrets = new[] { user.Trim(), pass.Trim() };
                 return null;
             }
             catch (Exception e) { return "Couldn't save them: " + e.Message; }

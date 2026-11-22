@@ -10,6 +10,7 @@
 | 1.2.1 | Fix: the profile script passed switches as `-SplitTunneling $split -RememberCredential $false`; PowerShell bound `$false` to another parameter and Windows refused the profile ("conflicting PPP Tunnel types"), so no first connect could dial. Now `-Switch:$value`; a test guards it (the fake VPN layer hid it). |
 | 1.2.2 | Fix: VpnScript.Run wrote the script through Process.StandardInput, whose writer added a UTF-8 byte-order mark (console input encoding on this PC), so PowerShell read `\uFEFF$ErrorActionPreference` as a command and the profile script never ran; the error text was empty. Server rows wrap their pills instead of cutting them off. Now `-EncodedCommand` (UTF-16LE base64; Process.Start writes the BOM itself with AutoFlush, so stdin can't be fixed; the scripts carry no credentials); `Reason` never returns an empty error. Tests run real PowerShell with harmless scripts. |
 | 1.2.3 | Flags instead of country codes: 149 PNGs (flagcdn.com, 40 px wide, 38 KB) embedded as HallowVPN.Flags.<code>.png, fitted into the same tile (square and tall flags centred), the code as a tooltip; the code tile stays as the fallback. |
+| 1.2.4 | Error 13868 on a real PC: Windows' default IKEv2 proposals are refused by Nord. The profile script now runs `Set-VpnConnectionIPsecConfiguration` (GCMAES256 / GCMAES256 / AES256 / SHA256 / Group14, PFS none; per-user, no admin) on every connect - after it the dial reached authentication. Service username and password trimmed on save and load. |
 
 ## Later
 

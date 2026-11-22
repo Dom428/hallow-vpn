@@ -55,6 +55,9 @@ namespace HallowVPN
             sb.AppendLine("  else { Add-VpnConnection -Name $n -ServerAddress " + Q(p.Host) + " -TunnelType Ikev2 -AuthenticationMethod Eap -EncryptionLevel Required -SplitTunneling:$split -RememberCredential:$false -Force }");
             // switches MUST be written -Switch:$value: "-RememberCredential $false" binds $false to another parameter and Windows
             // refuses the profile ("conflicting PPP Tunnel types") - the 1.0-1.2 bug that stopped every first connect
+            // Windows' default IKEv2 proposals (3DES / SHA1 / DH group 2) are refused by Nord's servers - error 13868. Nord accepts
+            // AES-256-GCM with SHA-256 and DH group 14; set on every connect (per-user entry, no admin), checked on a real PC.
+            sb.AppendLine("  Set-VpnConnectionIPsecConfiguration -ConnectionName $n -AuthenticationTransformConstants GCMAES256 -CipherTransformConstants GCMAES256 -EncryptionMethod AES256 -IntegrityCheckMethod SHA256 -DHGroup Group14 -PfsGroup None -Force");
             sb.AppendLine("  $c = Get-VpnConnection -Name $n");
             sb.AppendLine("  foreach ($r in @($c.Routes)) { if ($r) { Remove-VpnConnectionRoute -ConnectionName $n -DestinationPrefix $r.DestinationPrefix -ErrorAction SilentlyContinue } }");
             if (p.SplitTunnel) foreach (var r in p.Routes) sb.AppendLine("  Add-VpnConnectionRoute -ConnectionName $n -DestinationPrefix " + Q(r));
@@ -118,7 +121,7 @@ namespace HallowVPN
                 case 800: return "Couldn't reach the server (error 800). Try another server.";
                 case 623: return "The Windows VPN profile is missing (error 623) - it's set up again on the next connect.";
                 case 631: case 831: case 815: case 629: return "The connection was ended (error " + code + ").";
-                case 13868: return "The server and Windows couldn't agree on the encryption (error 13868).";
+                case 13868: return "The server and Windows couldn't agree on the encryption (error 13868). Click \"Recreate the VPN profile\" on Fix my connection - it sets the encryption Nord expects.";
                 case 720: return "Windows couldn't set up the connection's network settings (error 720).";
             }
             return "Windows' VPN client reported error " + code + ".";
