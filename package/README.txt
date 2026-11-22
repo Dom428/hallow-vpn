@@ -49,6 +49,12 @@ GOOD TO KNOW (honest limits)
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
 
+WHAT'S NEW IN 1.2.2 - the first connect works (really)
+- Fixed: the script that creates the "Hallow VPN" connection reached PowerShell with an invisible byte-order mark
+  in front, so its first line failed and Windows never got the request ("Windows couldn't set up the VPN profile:"
+  with no reason). It's handed to PowerShell a safer way now, and an error always says why.
+- Server list: the "best for gaming" / "P2P" badges wrap to a new line instead of being cut off.
+
 WHAT'S NEW IN 1.2.1 - the first connect works
 - Fixed: Windows refused to create the "Hallow VPN" connection ("conflicting PPP Tunnel types"), so Connect and
   Test connection never dialled. Two on/off settings were passed to PowerShell the wrong way; found on a real PC.

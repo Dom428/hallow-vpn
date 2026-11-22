@@ -66,24 +66,40 @@ namespace HallowVPN
         {
             return "$ErrorActionPreference = 'Stop'\r\ntry { if (Get-VpnConnection -Name " + Q(Entry) + " -ErrorAction SilentlyContinue) { Remove-VpnConnection -Name " + Q(Entry) + " -Force }; 'ok'; exit 0 } catch { 'ERR ' + $_.Exception.Message; exit 1 }\r\n";
         }
-        // runs a script through powershell's standard input (never on its command line), hidden, at most 60 s
+        // runs a script (no credentials in it) with powershell -EncodedCommand, hidden, at most 60 s
         public static string Run(string script)
         {
             try
             {
-                var psi = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command -") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                // NOT through standard input: .NET Framework's Process.Start wraps stdin in a StreamWriter using the console input
+                // encoding with AutoFlush on, so on PCs where that is UTF-8 a byte-order mark is written before we write anything.
+                // PowerShell then reads "﻿$ErrorActionPreference" as a command and the whole script fails - the 1.0-1.2.1 bug
+                // behind "Windows couldn't set up the VPN profile:". -EncodedCommand (UTF-16LE, base64) has no encoding to guess.
+                // These scripts carry no credentials (a test checks), so having them on the command line is fine.
+                var enc = Convert.ToBase64String(Encoding.Unicode.GetBytes(StripBom(script)));
+                var psi = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + enc) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
                 using (var p = Process.Start(psi))
                 {
                     var o = p.StandardOutput.ReadToEndAsync(); var e = p.StandardError.ReadToEndAsync();
-                    p.StandardInput.Write(script); p.StandardInput.Close();
                     if (!p.WaitForExit(60000)) { try { p.Kill(); } catch { } return "Windows took too long to set up the VPN profile."; }
-                    var outText = (o.Result ?? "").Trim();
+                    var outText = StripBom(o.Result ?? "").Trim();
                     if (p.ExitCode == 0 && outText.EndsWith("ok")) return null;
-                    var line = outText.Split('\n').Select(x => x.Trim()).LastOrDefault(x => x.StartsWith("ERR ")) ?? (e.Result ?? "").Trim();
-                    return "Windows couldn't set up the VPN profile: " + Family.OneLine(line.StartsWith("ERR ") ? line.Substring(4) : line);
+                    return "Windows couldn't set up the VPN profile: " + Reason(outText, StripBom(e.Result ?? "").Trim(), p.ExitCode);
                 }
             }
             catch (Exception ex) { return "Couldn't run PowerShell to set up the VPN profile: " + ex.Message; }
+        }
+        public static string StripBom(string s) { return (s ?? "").Replace("﻿", ""); }
+        // never an empty reason: the script's own ERR line, else PowerShell's first error line, else its last output, else the exit code
+        public static string Reason(string outText, string errText, int exitCode)
+        {
+            var ln = (outText ?? "").Split('\n').Select(x => x.Trim()).LastOrDefault(x => x.StartsWith("ERR "));
+            if (ln != null && ln.Length > 4) return Family.OneLine(ln.Substring(4));
+            var err = (errText ?? "").Split('\n').Select(x => x.Trim()).FirstOrDefault(x => x.Length > 0 && !x.StartsWith("#< CLIXML") && !x.StartsWith("<"));
+            if (err != null) return Family.OneLine(err);
+            var last = (outText ?? "").Split('\n').Select(x => x.Trim()).LastOrDefault(x => x.Length > 0);
+            if (last != null) return Family.OneLine(last);
+            return "PowerShell stopped with exit code " + exitCode + " and gave no reason.";
         }
     }
 

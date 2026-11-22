@@ -417,10 +417,11 @@ namespace HallowVPN
             g.Children.Add(star);
             var tile = Ui.CountryTile(s.Code, 18); Grid.SetColumn(tile, 1); g.Children.Add(tile);
             var name = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
-            var nl = new StackPanel { Orientation = Orientation.Horizontal };
-            nl.Children.Add(new TextBlock { Text = s.Name ?? s.Host, FontWeight = FontWeights.SemiBold });
-            if (best) { var p = Ui.Pill(sel == "gaming" ? "best for gaming" : sel == "p2p" ? "best for torrents" : "fastest", "AccentBrush", "AccentGlow"); p.Margin = new Thickness(8, 0, 0, 0); nl.Children.Add(p); }
-            if (s.P2P && sel != "p2p") { var p = Ui.Pill("P2P", "Lilac", "LilacBg"); p.Margin = new Thickness(6, 0, 0, 0); nl.Children.Add(p); }
+            // a WrapPanel, not a horizontal StackPanel: on a narrower window the pills move to the next line instead of being cut off
+            var nl = new WrapPanel { Orientation = Orientation.Horizontal };
+            nl.Children.Add(new TextBlock { Text = s.Name ?? s.Host, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 1, 8, 1), VerticalAlignment = VerticalAlignment.Center });
+            if (best) { var p = Ui.Pill(sel == "gaming" ? "best for gaming" : sel == "p2p" ? "best for torrents" : "fastest", "AccentBrush", "AccentGlow"); p.Margin = new Thickness(0, 1, 6, 1); nl.Children.Add(p); }
+            if (s.P2P && sel != "p2p") { var p = Ui.Pill("P2P", "Lilac", "LilacBg"); p.Margin = new Thickness(0, 1, 6, 1); nl.Children.Add(p); }
             name.Children.Add(nl);
             name.Children.Add(Ui.Muted(s.Host + (s.City != null ? " · " + s.City : ""), 11.5));
             Grid.SetColumn(name, 2); g.Children.Add(name);

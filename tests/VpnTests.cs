@@ -142,6 +142,14 @@ namespace HallowVPN.Tests
             Ok(!p.Contains("AllUserConnection"), "profile: per-user (never -AllUserConnection, so no admin)");
             Ok(p.Contains("-TunnelType Ikev2") && p.Contains("-AuthenticationMethod Eap") && p.Contains("-EncryptionLevel Required") && p.Contains("-RememberCredential:$false"), "profile: IKEv2, EAP, encryption required, Windows doesn't keep the credentials");
             Ok(!Regex.IsMatch(p, @"-(SplitTunneling|RememberCredential|Force|PassThru|AllUserConnection|UseWinlogonCredential) \$"), "profile: switches written -Switch:$value (with a space PowerShell binds the value to another parameter and Windows refuses the profile)");
+            // real PowerShell through VpnScript.Run with harmless scripts (nothing on the system changes): the first line must
+            // survive (a byte-order mark on stdin broke "$ErrorActionPreference" in 1.0-1.2.1), and a failure always has a reason
+            var harmless = "$ErrorActionPreference = 'Stop'\r\ntry {\r\n  $x = 1\r\n  'ok'; exit 0\r\n} catch { 'ERR ' + $_.Exception.Message; exit 1 }\r\n";
+            Ok(VpnScript.Run(harmless) == null, "Run: a multi-line script starting with $ErrorActionPreference runs in real PowerShell (no BOM on stdin)");
+            Ok(VpnScript.Run("﻿" + harmless) == null, "Run: a byte-order mark in the script is removed before PowerShell sees it");
+            var failing = VpnScript.Run("$ErrorActionPreference = 'Stop'\r\ntry {\r\n  throw 'made-up failure'\r\n} catch { 'ERR ' + $_.Exception.Message; exit 1 }\r\n");
+            Ok(failing != null && failing.Contains("made-up failure"), "Run: the script's own error reaches the app (" + failing + ")");
+            Ok(VpnScript.Reason("", "", 5).Contains("exit code 5") && VpnScript.Reason("", "#< CLIXML\r\nboom", 1) == "boom" && VpnScript.Reason("x\nERR bad", "", 1) == "bad", "Reason: never empty (ERR line, then stderr, then output, then the exit code)");
             Ok(p.Contains("-SplitTunneling:$split") && p.Split(new[] { "-SplitTunneling:$split" }, StringSplitOptions.None).Length == 3, "profile: both Add- and Set-VpnConnection pass split tunnelling as a switch value");
             Ok(p.Contains("'Hallow VPN'") && p.Contains("-ServerAddress 'nl1234.nordvpn.com'") && p.Contains("$split = $true"), "profile: name, server, split tunnelling");
             Ok(p.Contains("Add-VpnConnectionRoute -ConnectionName $n -DestinationPrefix '203.0.113.0/24'") && p.Contains("'2001:db8::/32'") && p.Contains("Remove-VpnConnectionRoute"), "profile: old routes out, new routes in");
