@@ -49,6 +49,14 @@ GOOD TO KNOW (honest limits)
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
 
+WHAT'S NEW IN 1.2.6 - the sign-in box in front
+- "Sign in through Windows" now brings Windows' box in front of Hallow VPN (it opened behind it). Once Windows has
+  your Nord login saved, the Connection page says so and the one-time note goes away.
+- For Hallow Remote and Hub: status.json says which protocol the next connect uses and whether connect / disconnect
+  ask Windows (UAC); the pipe can connect once without changing your remembered server ("--keep-target").
+- The WireGuard installer is downloaded into your Downloads folder (where Windows Installer can read it) and deleted
+  after the install. If it fails, the message shows where Windows Installer's log is.
+
 WHAT'S NEW IN 1.2.5 - Nord accepts the login
 - Fixed error 691 with correct credentials: Nord's login is EAP, and for EAP Windows only uses a login it saved itself.
   One-time step: Connection page > "Sign in through Windows" (paste the same service login, keep Save ticked).

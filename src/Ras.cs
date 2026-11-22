@@ -214,17 +214,68 @@ namespace HallowVPN
             size = total; return p;
         }        public const string NeedsWindowsLogin = "Windows needs to remember your Nord login once (error 691): click \"Sign in through Windows\" on the Connection page, paste the same service username and password, and keep \"Save\" ticked. After that Hallow VPN connects by itself.";
         // Windows' own dial dialog for the entry (per-user, no admin): the user types the service login once and Windows saves it
-        public static string WindowsSignIn(string pbk)
+        // 1.2.6: the box opened BEHIND Hallow VPN's window - so Hallow VPN (the foreground app, the user just clicked) lets it take the
+        // foreground and brings its window to the front once it appears; closed() runs (on a background thread) when the box is gone.
+        public static string WindowsSignIn(string pbk, Action closed = null)
         {
+            if (VpnSettings.TestDir != null || Snap.On) return "Not in a test copy.";
             try
             {
                 var exe = Path.Combine(Environment.SystemDirectory, "rasphone.exe");
                 var args = (pbk != null ? "-f \"" + pbk + "\" " : "") + "-d \"" + VpnScript.Entry + "\"";
-                Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false });
+                var p = Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false });
+                try { AllowSetForegroundWindow(p.Id); } catch { }
+                new Thread(() =>
+                {
+                    try
+                    {
+                        var sw = Stopwatch.StartNew(); IntPtr w = IntPtr.Zero;
+                        while (sw.ElapsedMilliseconds < 10000 && w == IntPtr.Zero && !p.HasExited) { Thread.Sleep(100); w = PickWindow(WindowsOf(p.Id)); }
+                        if (w != IntPtr.Zero) Front(w);
+                        p.WaitForExit(30 * 60 * 1000);
+                    }
+                    catch { }
+                    finally { try { p.Dispose(); } catch { } if (closed != null) try { closed(); } catch { } }
+                }) { IsBackground = true, Name = "windows-sign-in" }.Start();
                 return null;
             }
             catch (Exception e) { return "Couldn't open Windows' sign-in: " + e.Message; }
-        }    }
+        }
+        public class WinInfo { public IntPtr Handle; public bool Visible; public bool Owned; public string Title; }
+        // the process's sign-in box: a visible, titled top-level window; unowned first (the dialog itself), else any visible titled one
+        public static IntPtr PickWindow(IEnumerable<WinInfo> wins)
+        {
+            var l = (wins ?? Enumerable.Empty<WinInfo>()).Where(x => x != null && x.Visible && !string.IsNullOrEmpty(x.Title)).ToList();
+            var w = l.FirstOrDefault(x => !x.Owned) ?? l.FirstOrDefault();
+            return w == null ? IntPtr.Zero : w.Handle;
+        }
+        public static List<WinInfo> WindowsOf(int pid)
+        {
+            var r = new List<WinInfo>();
+            EnumWindows((h, l) =>
+            {
+                uint wp; GetWindowThreadProcessId(h, out wp);
+                if (wp == (uint)pid) { var sb = new StringBuilder(256); GetWindowText(h, sb, sb.Capacity); r.Add(new WinInfo { Handle = h, Visible = IsWindowVisible(h), Owned = GetWindow(h, 4) != IntPtr.Zero, Title = sb.ToString() }); }
+                return true;
+            }, IntPtr.Zero);
+            return r;
+        }
+        static void Front(IntPtr w)
+        {
+            if (IsIconic(w)) ShowWindow(w, 9);   // SW_RESTORE
+            BringWindowToTop(w); SetForegroundWindow(w);
+        }
+        delegate bool EnumProc(IntPtr h, IntPtr l);
+        [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder sb, int max);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+        [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+        [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+        [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+        [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+        [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int pid);    }
 
     public class WindowsVpn : IVpn
     {

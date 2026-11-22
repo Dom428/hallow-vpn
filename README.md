@@ -9,6 +9,18 @@ playing: it can pause the VPN for your game and reconnect after, or move you to 
 
 ![Connected (made-up data)](docs/connect.png)
 
+## New in 1.2.6: the sign-in box in front, and more for Remote and Hub
+
+- **Sign in through Windows** (the one-time step from 1.2.5) now brings Windows' box **in front of** Hallow VPN's window (it opened
+  behind it), and the button says that a Windows box opens. Once Windows has your Nord login saved, the Connection page says so
+  and the one-time note goes away - it re-checks as soon as the box closes.
+- **status.json** adds `nextProtocol` (the protocol the next connect uses - always, also while connected; `protocol` keeps its
+  meaning), `needsUac` (`{"connect": true|false, "disconnect": true|false}` - NordLynx asks Windows, IKEv2 never does), `target`
+  (what *Connect* connects to) and `windowsLogin` (Windows has the saved Nord login). Hallow Remote and Hub can show the right buttons.
+- The pipe's `connect <target> --keep-target` (or `--once`) connects to that target **without** changing what *Connect* means.
+- The WireGuard installer is downloaded into your **Downloads** folder (else `%ProgramData%\HallowVPN`), where Windows Installer can
+  read it, as `HallowVPN-<name>.msi`, and deleted after the install. If msiexec fails, the message shows the path of its log.
+
 ## New in 1.2: NordLynx, and a tighter kill switch
 
 - **NordLynx (Nord's WireGuard)** as a second protocol, through the **official WireGuard for Windows**: a **Protocol** choice -
@@ -128,8 +140,9 @@ playing: it can pause the VPN for your game and reconnect after, or move you to 
   1.1 adds `p2p` (true while connected to one of Nord's P2P servers - so Hallow Torrents can prefer them later), `leakCheck`
   (`ok` / `warn` / `fail`, or null when not connected / not checked yet), `leakCheckAt`, `setupDone`, `untrustedNetwork` and
   `autoConnect`; 1.2 adds `adapter` (`Hallow VPN` or `HallowNordLynx` while connected), `protocolChoice` and `killSwitchUpgrade`,
-  and `protocol` can be `NordLynx`; never an address, a Wi-Fi name, the credentials, the access token or the key; the pipe also
-  has `protocol [auto|nordlynx|ikev2]`),
+  and `protocol` can be `NordLynx`; 1.2.6 adds `nextProtocol`, `needsUac` (`connect` / `disconnect`), `target` and `windowsLogin`;
+  never an address, a Wi-Fi name, the credentials, the access token or the key; the pipe also has `protocol [auto|nordlynx|ikev2]`
+  and, from 1.2.6, `connect <target> --keep-target`),
   Hallow Hub's tray menu (Hub 2.13+ lists any app answering `menu`), the Hallow accent and **light / dark mode** from
   `%APPDATA%\Hallow\theme.json` (or its own Look setting), crash reports kept on this PC, and the GitHub updater (checks the
   download's SHA-256).
@@ -197,7 +210,10 @@ signer, plus - when given - the real installer downloaded once and **never run**
 injection refused), Nord's WireGuard keys from a saved public answer (the credentials endpoint is never called - a fake answers), the
 v2 kill switch rules (built and compared, never added), the elevated helper refusing anything odd, and in the test copy: NordLynx
 connect / status / leak test / health with a fake tunnel, no game-time reconnects, Automatic choosing IKEv2 for auto-connects, and
-the kill switch upgrade with a fake firewall.
+the kill switch upgrade with a fake firewall. 1.2.6 adds `needsUac` for every state, `--keep-target` parsing, picking Windows'
+sign-in box from made-up window lists (a test copy never starts rasphone or msiexec), the installer's folder and clean-up (temp
+files), and in the test copy: `nextProtocol` / `needsUac` / `target` / `windowsLogin` while off, connected over IKEv2 and over
+NordLynx (fake tunnel), and `connect ... --keep-target` leaving the remembered target alone. The test run stops itself after 5 minutes.
 
 ## Credits
 

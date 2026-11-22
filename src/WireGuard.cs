@@ -217,7 +217,34 @@ namespace HallowVPN
             catch { return null; }
             finally { Marshal.FreeHGlobal(p); }
         }
-        public static string DownloadDir { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HallowVPN", "downloads"); } }
+        // 1.2.6: the installer goes where Windows Installer (msiserver, a service) can read it: your Downloads folder, else
+        // %ProgramData%\HallowVPN - not %LOCALAPPDATA%\HallowVPN\downloads. It's deleted after the install (the log too, if it worked).
+        public static string DownloadDir { get { return PickDownloadDir(KnownDownloads, Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)); } }
+        public static string PickDownloadDir(Func<string> downloads, string programData)
+        {
+            string d = null; try { d = downloads == null ? null : downloads(); } catch { }
+            if (!string.IsNullOrEmpty(d) && Directory.Exists(d)) return d;
+            return Path.Combine(programData, "HallowVPN");
+        }
+        public const string FilePrefix = "HallowVPN-";   // never overwrites a WireGuard installer of your own in Downloads
+        [DllImport("shell32.dll")] static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid id, uint flags, IntPtr token, out IntPtr path);
+        static string KnownDownloads()
+        {
+            IntPtr p; if (SHGetKnownFolderPath(new Guid("374DE290-123F-4565-9164-39C4925E467B"), 0, IntPtr.Zero, out p) != 0) return null;
+            try { return Marshal.PtrToStringUni(p); } finally { Marshal.FreeCoTaskMem(p); }
+        }
+        public static string LogFor(string msi) { return msi + ".log"; }
+        public static void CleanUp(string msi, bool keepLog)
+        {
+            if (msi == null) return;
+            try { if (File.Exists(msi)) File.Delete(msi); } catch { }
+            if (!keepLog) try { if (File.Exists(LogFor(msi))) File.Delete(LogFor(msi)); } catch { }
+        }
+        public static string Failed(string why, string msi)
+        {
+            var log = msi == null ? null : LogFor(msi);
+            return log != null && File.Exists(log) ? why + " Windows Installer's log: " + log : why;
+        }
     }
     public class RealWgSetup : IWgSetup
     {
@@ -231,30 +258,34 @@ namespace HallowVPN
                 string sig; using (var wc = new WebClient()) { wc.Headers[HttpRequestHeader.UserAgent] = "HallowVPN/" + Program.Version; sig = wc.DownloadString(WgSetup.SigUrl); }
                 var list = WgSetup.ParseList(sig); var name = WgSetup.Pick(list, WgSetup.Arch());
                 if (name == null) return "WireGuard's download list has no installer for this PC (" + WgSetup.Arch() + ").";
-                Directory.CreateDirectory(WgSetup.DownloadDir); file = Path.Combine(WgSetup.DownloadDir, name);
+                var dir = WgSetup.DownloadDir; Directory.CreateDirectory(dir); file = Path.Combine(dir, WgSetup.FilePrefix + name);
                 using (var wc = new WebClient()) { wc.Headers[HttpRequestHeader.UserAgent] = "HallowVPN/" + Program.Version; wc.DownloadFile(WgSetup.Base + name, file); }
                 var why = WgSetup.Check(file, list[name], WgSetup.Signer);
-                if (why != null) { try { File.Delete(file); } catch { } file = null; }
+                if (why != null) { WgSetup.CleanUp(file, false); file = null; }
                 return why;
             }
-            catch (Exception e) { file = null; return "Couldn't get WireGuard from download.wireguard.com: " + e.Message; }
+            catch (Exception e) { WgSetup.CleanUp(file, false); file = null; return "Couldn't get WireGuard from download.wireguard.com: " + e.Message; }
         }
         public string Install(string file)
         {
             if (VpnSettings.TestDir != null || Snap.On) return "Not in a test copy.";
+            string why = null; bool running = false;
             try
             {
-                var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), "/i \"" + file + "\"") { UseShellExecute = true };
+                // /l*v: Windows Installer's own log next to the file - shown if it fails, deleted if it worked
+                var psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), "/i \"" + file + "\" /l*v \"" + WgSetup.LogFor(file) + "\"") { UseShellExecute = true };
                 using (var p = Process.Start(psi))
                 {
-                    if (!p.WaitForExit(15 * 60 * 1000)) return "The WireGuard installer is still open.";
-                    if (p.ExitCode == 1602) return "The WireGuard installer was cancelled.";
-                    if (p.ExitCode != 0 && p.ExitCode != 3010) return "The WireGuard installer stopped (code " + p.ExitCode + ").";
+                    if (!p.WaitForExit(15 * 60 * 1000)) { running = true; return "The WireGuard installer is still open."; }
+                    if (p.ExitCode == 1602) why = "The WireGuard installer was cancelled.";
+                    else if (p.ExitCode != 0 && p.ExitCode != 3010) why = WgSetup.Failed("The WireGuard installer stopped (code " + p.ExitCode + ").", file);
                 }
-                return Installed() ? null : "WireGuard doesn't seem to be installed.";
+                if (why == null && !Installed()) why = WgSetup.Failed("WireGuard doesn't seem to be installed.", file);
+                return why;
             }
-            catch (System.ComponentModel.Win32Exception e) { return e.NativeErrorCode == 1223 ? Elevated.Cancelled : "Couldn't start the installer: " + e.Message; }
-            catch (Exception e) { return "Couldn't start the installer: " + e.Message; }
+            catch (System.ComponentModel.Win32Exception e) { return why = e.NativeErrorCode == 1223 ? Elevated.Cancelled : "Couldn't start the installer: " + e.Message; }
+            catch (Exception e) { return why = "Couldn't start the installer: " + e.Message; }
+            finally { if (!running) WgSetup.CleanUp(file, why != null && why.Contains("Windows Installer's log")); }
         }
     }
     public class FakeWgSetup : IWgSetup

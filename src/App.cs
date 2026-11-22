@@ -20,14 +20,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow VPN")]
 [assembly: AssemblyProduct("Hallow VPN")]
 [assembly: AssemblyDescription("A game-aware VPN client for NordVPN on Windows' built-in IKEv2")]
-[assembly: AssemblyVersion("1.2.5.0")]
-[assembly: AssemblyFileVersion("1.2.5.0")]
+[assembly: AssemblyVersion("1.2.6.0")]
+[assembly: AssemblyFileVersion("1.2.6.0")]
 
 namespace HallowVPN
 {
     public static class Program
     {
-        public const string Version = "1.2.5";
+        public const string Version = "1.2.6";
         [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr v);
 
         [STAThread]
@@ -198,17 +198,20 @@ namespace HallowVPN
         // ---------------- the connection
         Credentials Creds() { return SnapMode ? snapCreds : Account.Load(); }
         // connect to a target (fastest / gaming / country / server). remember = it becomes what "Connect" means (a click, the pipe)
-        public string Connect(Target t, bool remember)
+        public string Connect(Target t, bool remember) { return Connect(t, remember, !remember); }
+        // automatic = Hallow VPN does it by itself (no UAC out of nowhere); remember=false + automatic=false = a person's one-off
+        // connect that keeps the remembered target (the pipe's "connect <target> --keep-target", 1.2.6)
+        public string Connect(Target t, bool remember, bool automatic)
         {
             if (t == null) return "Unknown server.";
             if (Phase == Phase.Connecting || Phase == Phase.Disconnecting) return "Hallow VPN is busy - wait a moment.";
-            var proto = ProtoFor(!remember); Credentials creds = null;
+            var proto = ProtoFor(automatic); Credentials creds = null;
             if (proto == ProtoWg)
             {
                 if (!WgInstalled) { LastError = "NordLynx needs WireGuard for Windows - install it on the NordLynx page (or pick IKEv2 there)."; Fire(); return LastError; }
                 if (!NordLynx.Exists && !SnapMode) { LastError = "Add your Nord access token on the NordLynx page first."; Fire(); return LastError; }
                 if (KillSwitchOld) { LastError = "The kill switch from Hallow VPN 1.0 blocks NordLynx (UDP 51820). Upgrade it on the Kill switch page first."; Fire(); return LastError; }
-                if (!remember && Game != null) { pendingAuto = true; Log("NordLynx waits for the game to close (it asks Windows)"); return "NordLynx asks Windows (UAC), so it waits until the game closes."; }
+                if (automatic && Game != null) { pendingAuto = true; Log("NordLynx waits for the game to close (it asks Windows)"); return "NordLynx asks Windows (UAC), so it waits until the game closes."; }
             }
             else
             {
@@ -216,9 +219,10 @@ namespace HallowVPN
                 if (creds == null) { LastError = "Add your Nord service credentials first (Account page)."; Fire(); return LastError; }
             }
             if (Home.Current != null) { LastError = "Home mode is on (Tailscale exit node " + Home.Current.Name + "). Stop it on the Home page first - the two don't stack."; Fire(); return LastError; }
-            if (remember) { S.LastTarget = t.ToString(); S.Save(); PausedForGame = false; SwitchedForGame = false; resumeAt = null; }
+            if (remember) { S.LastTarget = t.ToString(); S.Save(); }
+            if (!automatic) { PausedForGame = false; SwitchedForGame = false; resumeAt = null; }
             wanted = true; cancel = false; retryAt = null; LastError = null;
-            Phase = Phase.Connecting; CurrentTarget = t; connectingProto = proto; Log("connect " + t + " over " + proto + (remember ? "" : " (automatic)"));
+            Phase = Phase.Connecting; CurrentTarget = t; connectingProto = proto; Log("connect " + t + " over " + proto + (automatic ? " (automatic)" : remember ? "" : " (keeps the remembered target)"));
             Fire();
             Action work = () =>
             {
@@ -680,7 +684,7 @@ namespace HallowVPN
             d["paused"] = PausedForGame; d["game"] = Game; d["gameMode"] = EffGame();
             d["home"] = Home.Current == null ? null : Home.Current.Name; d["account"] = HasAccount; d["autoReconnect"] = S.AutoReconnect;
             d["lastCrash"] = Crash.LastTime() == null ? null : Family.Time(Crash.LastTime().Value);
-            Status11(d); Status12(d);
+            Status11(d); Status12(d); Status126(d);
             if (VpnSettings.TestDir != null) { lock (log) d["log"] = log.ToArray(); d["notifications"] = Notifications; d["held"] = NotificationsHeld; }
             return d;
         }
@@ -698,9 +702,10 @@ namespace HallowVPN
                 case "connect":
                     return OnUi(() =>
                     {
+                        bool keep; arg = KeepTarget(arg, out keep);
                         var t = Target.Parse(arg); if (t == null) return "error unknown server - use fastest, gaming, p2p, a country code (US) or a server (us1234)";
                         if (t.Kind == "country" && Book.FindCountry(t.Value) == null) return "error Nord's country list doesn't have " + t.Value;
-                        var e = Connect(t, true); return e == null ? "ok connecting" : "error " + e;
+                        var e = Connect(t, !keep, false); return e == null ? "ok connecting" : "error " + e;
                     });
                 case "disconnect": return OnUi(() => { Disconnect(true); return "ok"; });
                 case "open": return OnUi(() => { var p = arg.Length > 0 ? MainWindow.PageId(arg) : null; if (arg.Length > 0 && p == null) return "error no page called " + arg; ShowMain(p); return "ok"; });
