@@ -1,0 +1,5 @@
+# build output
+HallowVPN.exe
+tests/VpnTests.exe
+tests/out/
+package/HallowVPN.exe

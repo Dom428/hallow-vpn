@@ -1,0 +1,55 @@
+HALLOW VPN - a game-aware VPN client for your NordVPN subscription
+
+Uses your EXISTING NordVPN subscription through Windows' own IKEv2 VPN client. No NordVPN app, no
+drivers, nothing else to download, no admin for everyday use.
+
+HOW TO INSTALL
+1. Right-click the zip > Properties > tick "Unblock" > OK
+2. Right-click the zip > Extract All
+3. Double-click INSTALL.bat (no admin needed)
+
+FIRST TIME
+1. Account page: paste your Nord SERVICE credentials. They are NOT your Nord login: on
+   nordaccount.com go to NordVPN > "Set up NordVPN manually" and copy the Service credentials.
+   They're kept encrypted (Windows DPAPI) for your Windows user only, never logged.
+2. Account page: if Windows doesn't trust Nord's servers yet, click "Install Nord's certificate".
+   Hallow VPN downloads NordVPN's root certificate from Nord, checks it and shows its fingerprint;
+   Windows then asks for permission (UAC) because it's a system change.
+3. Connection page: Connect (fastest), Best for gaming, a country, a server or a favourite.
+
+WHAT IT DOES
+- Servers from Nord's public server list (IKEv2 only), cached and refreshed at most every 3 hours,
+  with the load and a ping this PC measures. Fastest, by country, favourites, Best for gaming.
+- Status: server, connected time, public IP (Nord's IP check, only while connected).
+- Auto-reconnect when the connection drops.
+- Split tunnel: everything, only some addresses / websites, or everything except games.
+- Gaming: while Delta Force, Discovery, your extra games or the game Hallow Hub says you're
+  playing runs, it can disconnect (and reconnect after) or move to a low-ping server. It never
+  pops anything up during a game.
+- Kill switch (optional, asks Windows): firewall rules that block traffic outside the VPN.
+- Home: route through a computer at home with Tailscale (if Tailscale is installed).
+- Hallow family: Hallow Hub's tray menu lists it, the Hallow accent, light / dark, status for
+  other apps (Hallow Torrents can read it).
+
+GOOD TO KNOW (honest limits)
+- Split tunnelling is by ADDRESS, not by app: Windows' built-in VPN client splits by routes, and
+  per-app splitting needs a network driver, which Hallow VPN doesn't install. "Everything except
+  games" works by pausing the VPN while a game runs.
+- The kill switch is Windows Firewall rules (block TCP / UDP / ICMP to public addresses on Wi-Fi and
+  wired, except IKEv2's UDP 500 / 4500 and DNS on port 53). Rarer IP protocols aren't blocked, it
+  needs Windows Firewall on, and while it's installed no VPN = no internet. Installing and removing
+  it asks Windows for permission (UAC).
+- Home mode uses your home connection: it doesn't hide your traffic from your home internet
+  provider.
+- Quitting Hallow VPN leaves the VPN connection as it is (Windows keeps it).
+- Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
+  pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
+
+WHAT'S NEW IN 1.0
+- The first version: Nord servers (fastest, by country, favourites, best for gaming), connect
+  through Windows' IKEv2, auto-reconnect, split tunnel, game awareness, kill switch, Home mode
+  (Tailscale) and the family link.
+
+CREDITS
+Icons: Font Awesome Free 7.3.1 by Fonticons, Inc. (https://fontawesome.com), licensed CC BY 4.0 - see FontAwesome-LICENSE.txt.
+Hallow VPN isn't made by or affiliated with Nord Security; NordVPN is their trademark.
