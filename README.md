@@ -88,7 +88,7 @@ playing: it can pause the VPN for your game and reconnect after, or move you to 
 - **Best for torrents**: Nord's P2P servers (recommendations with `filters[servers_groups][identifier]=legacy_p2p` - group 15, "P2P"),
   on the Servers page, the Connection page, Hub's menu and the pipe (`connect p2p`).
 - **Connection health**: data sent / received (RasGetConnectionStatistics), a live ping to the server and a *slow server? switch*
-  hint when the ping is over 150 ms or the server is 75 % busy. Read every 2 s at most, only while the Connection page is showing
+  hint when the ping is over 150 ms or the server is 75% busy. Read every 2 s at most, only while the Connection page is showing
   and the window isn't minimised.
 
 ## What it does
@@ -101,7 +101,7 @@ playing: it can pause the VPN for your game and reconnect after, or move you to 
   `filters[country_id]`, and the country list. Cached in `servers.json` and refreshed **at most every 3 hours** (a manual Refresh at
   most every 5 minutes). Each server shows its country, city, **load** and a **ping measured by this PC** (ICMP echo, or the time a
   TCP connection to port 443 takes when ICMP gets no answer). Choices: **Fastest** (ping + 0.8 x load), **by country**,
-  **favourites** (star any server) and **Best for gaming** (nearby and quiet: under 40 % load, then the lowest ping).
+  **favourites** (star any server) and **Best for gaming** (nearby and quiet: under 40% load, then the lowest ping).
 
   ![Best for gaming (made-up data)](docs/servers-gaming.png)
 - **Connect** with Windows' own IKEv2 client: one **per-user** VPN connection called "Hallow VPN" (PowerShell `Add-VpnConnection`

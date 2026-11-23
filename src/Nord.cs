@@ -178,7 +178,7 @@ namespace HallowVPN
         // ---- picking a server from a measured list
         // Fastest: the lowest ping, with load counted in (a busy server is slower) - ping + 0.8 x load; unmeasured = 400 ms
         public static double FastScore(Server s) { return (s.Ping >= 0 ? s.Ping : 400) + 0.8 * s.Load; }
-        // Best for gaming: nearby and quiet - only servers under 40 % load (if there are any), then the lowest ping, then the lower load
+        // Best for gaming: nearby and quiet - only servers under 40% load (if there are any), then the lowest ping, then the lower load
         public static Server Fastest(IEnumerable<Server> list) { return list.Where(s => s != null).OrderBy(FastScore).ThenBy(s => s.Load).FirstOrDefault(); }
         public static Server ForGaming(IEnumerable<Server> list)
         {

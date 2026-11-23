@@ -85,7 +85,7 @@ namespace HallowVPN.Tests
         static void Picking()
         {
             Ok(Nord.Fastest(Fakes()).Host == "a3.nordvpn.com", "Fastest = ping + 0.8 x load (25 + 28 beats 20 + 48 and 15 + 72)");
-            Ok(Nord.ForGaming(Fakes()).Host == "a3.nordvpn.com", "Best for gaming = under 40 % load, then lowest ping");
+            Ok(Nord.ForGaming(Fakes()).Host == "a3.nordvpn.com", "Best for gaming = under 40% load, then lowest ping");
             var busy = new List<Server> { new Server { Host = "b1.nordvpn.com", Load = 80, Ping = 30 }, new Server { Host = "b2.nordvpn.com", Load = 50, Ping = 40 } };
             Ok(Nord.ForGaming(busy).Host == "b1.nordvpn.com", "all busy: lowest ping anyway");
             Ok(Nord.Fastest(new List<Server>()) == null && Nord.ForGaming(new List<Server>()) == null, "empty list: nothing");

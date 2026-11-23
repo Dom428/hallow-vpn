@@ -98,7 +98,7 @@ namespace HallowVPN
             return f == null ? "Everything checks out." : f.Title + ": " + f.Text;
         }
 
-        // "slow server? switch": ping over 150 ms or load 75 % and more
+        // "slow server? switch": ping over 150 ms or load 75% and more
         public static bool Slow(int ping, int load) { return ping > 150 || load >= 75; }
         public static string Bytes(long b)
         {

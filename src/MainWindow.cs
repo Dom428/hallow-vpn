@@ -255,7 +255,7 @@ namespace HallowVPN
                 clock = new TextBlock { FontFamily = Ui.Mono, FontSize = 12.5, Text = c.Since == null ? "-" : Fmt.Span(c.Now() - c.Since.Value) };
                 g.Children.Add(KV("Connected for", clock));
                 g.Children.Add(KV("Public IP", c.IpLoading ? "checking…" : c.PublicIp ?? "-", (c.IpProtected == true ? "protected, " : "") + (c.IpCountry != null ? c.IpCountry + " · " : "") + "Nord's IP check (api.nordvpn.com), only while connected"));
-                if (c.Current != null && c.Current.Load >= 0) g.Children.Add(KV("Load", Ui.Row(Ui.LoadBar(c.Current.Load, 80), Pad(Ui.Num("  " + c.Current.Load + " %", 12.5)))));
+                if (c.Current != null && c.Current.Load >= 0) g.Children.Add(KV("Load", Ui.Row(Ui.LoadBar(c.Current.Load, 80), Pad(Ui.Num("  " + c.Current.Load + "%", 12.5)))));
                 if (c.Current != null && c.Current.Ping >= 0) g.Children.Add(KV("Ping", Fmt.Ms(c.Current.Ping), "measured by this PC before connecting"));
                 g.Children.Add(HealthRows());
                 left.Children.Add(g);
@@ -384,7 +384,7 @@ namespace HallowVPN
             var tsp = new StackPanel();
             tsp.Children.Add(Ui.T(title, 20, true));
             string about = sel == "fastest" ? "Nord's recommended IKEv2 servers for where you are, ordered by the ping this PC measures plus their load."
-                : sel == "gaming" ? "Nearby, quiet servers: under 40 % load, then the lowest ping this PC measures. What \"Best for gaming\" connects to."
+                : sel == "gaming" ? "Nearby, quiet servers: under 40% load, then the lowest ping this PC measures. What \"Best for gaming\" connects to."
                 : sel == "p2p" ? "Nord's P2P servers (the servers Nord allows torrenting on), ordered by ping plus load. What \"Best for torrents\" and Hallow Torrents' \"connect p2p\" use."
                 : sel == "favourites" ? "Servers you starred. Click the star on any server to add it."
                 : "Nord's recommended IKEv2 servers in this country, ordered by ping plus load.";
@@ -434,7 +434,7 @@ namespace HallowVPN
             name.Children.Add(nl);
             name.Children.Add(Ui.Muted(s.Host + (s.City != null ? " · " + s.City : ""), 11.5));
             Grid.SetColumn(name, 2); g.Children.Add(name);
-            var load = Ui.Row(Ui.LoadBar(s.Load, 54), Pad(Ui.Num(s.Load >= 0 ? "  " + s.Load + " %" : "  -", 12))); load.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(load, 3); g.Children.Add(load);
+            var load = Ui.Row(Ui.LoadBar(s.Load, 54), Pad(Ui.Num(s.Load >= 0 ? "  " + s.Load + "%" : "  -", 12))); load.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(load, 3); g.Children.Add(load);
             var ping = Ui.Num(Fmt.Ms(s.Ping), 12, s.Ping < 0 ? Ui.R("Faint") : s.Ping < 50 ? Ui.R("Green") : s.Ping < 120 ? Ui.R("Amber") : Ui.R("Red")); ping.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(ping, 4); g.Children.Add(ping);
             bool can = (c.HasAccount || (c.ProtoFor(false) == Controller.ProtoWg && c.NordLynxReady)) && c.Phase != Phase.Connecting && c.Phase != Phase.Disconnecting && c.Home.Current == null;
             bool here = c.Phase == Phase.On && c.Current != null && c.Current.Host == s.Host;
@@ -514,7 +514,7 @@ namespace HallowVPN
             var gm = c.S.GameMode;
             sp.Children.Add(Choice("Do nothing", "The VPN stays as it is.", gm == Games.ModeOff, () => set(Games.ModeOff)));
             sp.Children.Add(Choice("Disconnect while I play, reconnect after", "Your game goes out directly (lowest ping, no VPN). Hallow VPN reconnects to the same choice 10 seconds after the game closes.", gm == Games.ModePause, () => set(Games.ModePause)));
-            sp.Children.Add(Choice("Stay connected on a low-ping server", "Hallow VPN switches to the best server for gaming (nearby, under 40 % load, lowest ping) when the game starts, and back to your choice after.", gm == Games.ModeLowPing, () => set(Games.ModeLowPing)));
+            sp.Children.Add(Choice("Stay connected on a low-ping server", "Hallow VPN switches to the best server for gaming (nearby, under 40% load, lowest ping) when the game starts, and back to your choice after.", gm == Games.ModeLowPing, () => set(Games.ModeLowPing)));
             var eff = Games.Effective(c.S.SplitMode, gm, c.KillSwitchOn);
             if ((c.Phase != Phase.Off && c.Proto == Controller.ProtoWg) || c.S.Protocol == Protocols.NordLynx) sp.Children.Add(Ui.Note("With NordLynx connected, nothing changes when a game starts: disconnecting or switching NordLynx asks Windows (UAC), and Hallow VPN never pops that up during a game. Use IKEv2 (NordLynx page) if you want it to pause or switch for games.", "Lilac", "LilacBg"));
             if (c.S.SplitMode == Split.ExceptGames && gm != Games.ModePause) sp.Children.Add(Ui.Note("Split tunnel is set to \"Everything except games\", so the VPN pauses while you play anyway.", "Lilac", "LilacBg"));

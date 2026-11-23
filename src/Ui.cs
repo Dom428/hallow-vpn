@@ -148,7 +148,7 @@ namespace HallowVPN
             return new Border { Width = size + 6, Height = size - 4, CornerRadius = new CornerRadius(2), Background = R("TileBg"), VerticalAlignment = VerticalAlignment.Center,
                 Child = new TextBlock { Text = string.IsNullOrEmpty(code) ? "--" : code.ToUpperInvariant(), FontSize = size * 0.46, FontWeight = FontWeights.Bold, FontFamily = Mono, Foreground = R("TileText"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         }
-        // a small load bar (0-100 %): green / amber / red
+        // a small load bar (0-100%): green / amber / red
         public static FrameworkElement LoadBar(int load, double width = 60)
         {
             var g = new Grid { Width = width, Height = 6, VerticalAlignment = VerticalAlignment.Center };

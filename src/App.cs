@@ -20,14 +20,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow VPN")]
 [assembly: AssemblyProduct("Hallow VPN")]
 [assembly: AssemblyDescription("A game-aware VPN client for NordVPN on Windows' built-in IKEv2")]
-[assembly: AssemblyVersion("1.2.6.0")]
-[assembly: AssemblyFileVersion("1.2.6.0")]
+[assembly: AssemblyVersion("1.2.7.0")]
+[assembly: AssemblyFileVersion("1.2.7.0")]
 
 namespace HallowVPN
 {
     public static class Program
     {
-        public const string Version = "1.2.6";
+        public const string Version = "1.2.7";
         [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr v);
 
         [STAThread]

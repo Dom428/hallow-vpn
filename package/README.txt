@@ -49,6 +49,9 @@ GOOD TO KNOW (honest limits)
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
 
+WHAT'S NEW IN 1.2.7
+- Percentages read 45% instead of 45 %.
+
 WHAT'S NEW IN 1.2.6 - the sign-in box in front
 - "Sign in through Windows" now brings Windows' box in front of Hallow VPN (it opened behind it). Once Windows has
   your Nord login saved, the Connection page says so and the one-time note goes away.

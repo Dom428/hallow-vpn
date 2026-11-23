@@ -191,7 +191,7 @@ namespace HallowVPN
             hPing.Foreground = c.LivePing < 0 ? Ui.R("Muted") : c.LivePing < 50 ? Ui.R("Green") : c.LivePing <= 150 ? Ui.R("Amber") : Ui.R("Red");
             bool slow = c.SlowServer;
             hSlow.Visibility = slow ? Visibility.Visible : Visibility.Collapsed;
-            if (slow) hSlowText.Text = "Slow server? " + (c.LivePing > 150 ? "The ping is " + c.LivePing + " ms" : "It's " + c.Current.Load + " % busy") + " - another server may be quicker.";
+            if (slow) hSlowText.Text = "Slow server? " + (c.LivePing > 150 ? "The ping is " + c.LivePing + " ms" : "It's " + c.Current.Load + "% busy") + " - another server may be quicker.";
         }
         void LeakCard(StackPanel sp)
         {

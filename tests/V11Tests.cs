@@ -127,7 +127,7 @@ namespace HallowVPN.Tests
             b.Host = "nl1.nordvpn.com"; r = Diagnosis.Run(b); Ok(r[3].Status == "warn" && r[3].Text.Contains("809"), "found but no ping answer: warn, mentions 809");
             b.Host = null; Ok(Diagnosis.Run(b)[3].Repair == "servers", "no server list: refresh repair");
             b.PbkText = null; Ok(Diagnosis.Run(b)[2].Status == "skip" && Diagnosis.Run(b)[2].Repair == "profile", "no profile yet: made on the first connect");
-            Ok(Diagnosis.Slow(160, 10) && Diagnosis.Slow(40, 80) && !Diagnosis.Slow(40, 30) && !Diagnosis.Slow(-1, 30), "slow server: ping over 150 ms or load 75 %+");
+            Ok(Diagnosis.Slow(160, 10) && Diagnosis.Slow(40, 80) && !Diagnosis.Slow(40, 30) && !Diagnosis.Slow(-1, 30), "slow server: ping over 150 ms or load 75%+");
             Ok(Diagnosis.Bytes(512) == "512 B" && Diagnosis.Bytes(182452224) == "174.0 MB" && Diagnosis.Bytes(1932735283) == "1.80 GB" && Diagnosis.Bytes(-1) == "-", "byte counts");
         }
 
