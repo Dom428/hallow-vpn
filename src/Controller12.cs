@@ -80,6 +80,7 @@ namespace HallowVPN
         {
             d["adapter"] = Phase == Phase.On ? (Proto == ProtoWg ? NordLynx.Tunnel : VpnScript.Entry) : null;   // Hallow Torrents binds to it
             d["protocolChoice"] = S.Protocol;
+            d["dnsFilter"] = DnsFilters.IsOn(S.DnsFilter) ? S.DnsFilter : "off";   // 1.3 Threat protection
             d["killSwitchUpgrade"] = KillSwitchOld;
         }
     }

@@ -20,14 +20,14 @@ using WF = System.Windows.Forms;
 [assembly: AssemblyTitle("Hallow VPN")]
 [assembly: AssemblyProduct("Hallow VPN")]
 [assembly: AssemblyDescription("A game-aware VPN client for NordVPN on Windows' built-in IKEv2")]
-[assembly: AssemblyVersion("1.2.7.0")]
-[assembly: AssemblyFileVersion("1.2.7.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace HallowVPN
 {
     public static class Program
     {
-        public const string Version = "1.2.7";
+        public const string Version = "1.3";
         [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr v);
 
         [STAThread]
@@ -147,6 +147,7 @@ namespace HallowVPN
         public Controller(bool trayOnly, bool snapMode = false)
         {
             SnapMode = snapMode; ui = Dispatcher.CurrentDispatcher;
+            Pbk.FilterOf = () => S.DnsFilter ?? "";   // 1.3: the VPN connection's DNS follows Threat protection
             bool fake = snapMode || VpnSettings.Fake;
             Api = fake ? (INordApi)FakeData.Api() : new RealNordApi();
             var pinger = fake ? (IPinger)new FakePinger() : new RealPinger(); Pinger = pinger;
@@ -221,7 +222,7 @@ namespace HallowVPN
             if (Home.Current != null) { LastError = "Home mode is on (Tailscale exit node " + Home.Current.Name + "). Stop it on the Home page first - the two don't stack."; Fire(); return LastError; }
             if (remember) { S.LastTarget = t.ToString(); S.Save(); }
             if (!automatic) { PausedForGame = false; SwitchedForGame = false; resumeAt = null; }
-            wanted = true; cancel = false; retryAt = null; LastError = null;
+            wanted = true; cancel = false; retryAt = null; LastError = null; DnsPending = false;   // 1.3
             Phase = Phase.Connecting; CurrentTarget = t; connectingProto = proto; Log("connect " + t + " over " + proto + (automatic ? " (automatic)" : remember ? "" : " (keeps the remembered target)"));
             Fire();
             Action work = () =>

@@ -9,6 +9,21 @@ playing: it can pause the VPN for your game and reconnect after, or move you to 
 
 ![Connected (made-up data)](docs/connect.png)
 
+## New in 1.3: Threat protection, with no driver
+
+NordVPN's own Threat Protection blocks ads, trackers and malware sites with drivers inside Windows. Hallow VPN's new
+**Threat protection** page does it without any: while you're connected, the VPN connection's DNS points at a filtering DNS
+service, so a blocked site simply doesn't resolve - in every app, not just the browser.
+
+- **Off - NordVPN's DNS** (default): nothing is blocked, exactly as before.
+- **AdGuard DNS** (94.140.14.14 / 94.140.15.15): ads, trackers and malware / phishing sites.
+- **Quad9** (9.9.9.9 / 149.112.112.112): malware and phishing sites only.
+
+Lookups still travel inside the VPN tunnel (your internet provider sees nothing; the DNS service sees the Nord server's address,
+not yours). It applies to IKEv2 and NordLynx alike, from the next connect ("Reconnect now" appears when you change it while
+connected). The kill switch is unchanged and the leak test still checks that every lookup goes through the VPN. Split tunnel's
+"Only these go through the VPN" mode doesn't use the VPN for lookups, so nothing is filtered there. status.json adds `dnsFilter`.
+
 ## New in 1.2.6: the sign-in box in front, and more for Remote and Hub
 
 - **Sign in through Windows** (the one-time step from 1.2.5) now brings Windows' box **in front of** Hallow VPN's window (it opened

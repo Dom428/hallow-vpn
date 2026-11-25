@@ -22,7 +22,7 @@ namespace HallowVPN
             bool changed; var e = Pbk.Ensure(Vpn.PbkPath, VpnScript.Entry, S.SplitMode, Path.Combine(VpnSettings.Dir, "rasphone.pbk.bak"), out changed);
             DnsNote = e;
             if (e != null) Log("DNS protection: " + e);
-            else if (changed) Log("profile DNS: " + (S.SplitMode == Split.Only ? "automatic (split tunnel)" : "NordVPN's DNS, VPN first"));
+            else if (changed) Log("profile DNS: " + (S.SplitMode == Split.Only ? "automatic (split tunnel)" : DnsFilters.Get(S.DnsFilter).Who + "'s DNS, VPN first"));
         }
 
         // ---------------- the leak check (while connected): Nord's IP check + the DNS servers in use + IPv6

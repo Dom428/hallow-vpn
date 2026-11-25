@@ -72,7 +72,7 @@ namespace HallowVPN
         public static string Conf(string key, string serverKey, string ip)
         {
             if (!ValidKey(key) || !ValidKey(serverKey) || !ValidIp(ip)) throw new ArgumentException("not a NordLynx server or key");
-            return "[Interface]\r\nPrivateKey = " + key + "\r\nAddress = " + Prefix + "\r\nDNS = " + Pbk.NordDns1 + ", " + Pbk.NordDns2 + "\r\n\r\n" +
+            return "[Interface]\r\nPrivateKey = " + key + "\r\nAddress = " + Prefix + "\r\nDNS = " + Pbk.Dns1 + ", " + Pbk.Dns2 + "\r\n\r\n" +   // 1.3: Nord's DNS or the chosen filtering DNS
                 "[Peer]\r\nPublicKey = " + serverKey + "\r\nAllowedIPs = 0.0.0.0/0, ::/0\r\nEndpoint = " + ip + ":" + Port + "\r\nPersistentKeepalive = 25\r\n";
         }
         // the argument of "--elevated wg-up": "<station ip> <server public key>" - nothing secret, checked on both sides

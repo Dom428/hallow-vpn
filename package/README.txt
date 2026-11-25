@@ -49,6 +49,10 @@ GOOD TO KNOW (honest limits)
 - Nothing is sent anywhere except to Nord (server list, IP check, the VPN itself), the servers it
   pings, and GitHub for updates. Crash reports stay on this PC and never contain your credentials.
 
+WHAT'S NEW IN 1.3 - THREAT PROTECTION, WITH NO DRIVER
+- A new Threat protection page: while connected, block ads, trackers and malware sites in every app (AdGuard DNS) or malware only (Quad9) - with no driver and no admin. Off (NordVPN's DNS) by default.
+- Lookups stay inside the VPN tunnel; the kill switch and leak test work as before.
+
 WHAT'S NEW IN 1.2.7
 - Percentages read 45% instead of 45 %.
 

@@ -41,6 +41,7 @@ namespace HallowVPN
         [DataMember] public string LastTarget = "fastest";     // what "Connect" connects to: fastest / gaming / country:<CODE> / server:<host>
         [DataMember] public List<Favourite> Favourites;
         [DataMember] public string SplitMode = Split.All;      // all / only / except-games
+        [DataMember] public string DnsFilter;                  // 1.3: threat protection by DNS - null/"" = off (NordVPN's DNS), "adguard", "quad9"
         [DataMember] public List<string> SplitRoutes;          // "Only these go through the VPN": addresses / ranges (CIDR)
         [DataMember] public string GameMode = Games.ModeOff;   // off / pause / lowping
         [DataMember] public List<string> ExtraGames;           // more exe names treated as games

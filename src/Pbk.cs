@@ -20,6 +20,10 @@ namespace HallowVPN
     public static class Pbk
     {
         public const string NordDns1 = "103.86.96.100", NordDns2 = "103.86.99.100";
+        // 1.3: the DNS the VPN connection uses - NordVPN's, or a filtering service (Protect13.cs); set by the controller
+        public static Func<string> FilterOf = () => "";
+        public static string Dns1 { get { return DnsFilters.Get(FilterOf()).Dns1; } }
+        public static string Dns2 { get { return DnsFilters.Get(FilterOf()).Dns2; } }
         static readonly Encoding Bytes = Encoding.GetEncoding(28591);   // Latin-1: every byte round-trips unchanged
 
         // what the "Hallow VPN" entry should say for the split mode
@@ -27,7 +31,7 @@ namespace HallowVPN
         {
             if (splitMode == Split.Only)
                 return new Dictionary<string, string> { { "IpNameAssign", "1" }, { "IpInterfaceMetric", "0" } };
-            return new Dictionary<string, string> { { "IpNameAssign", "2" }, { "IpDnsAddress", NordDns1 }, { "IpDns2Address", NordDns2 }, { "IpInterfaceMetric", "1" } };
+            return new Dictionary<string, string> { { "IpNameAssign", "2" }, { "IpDnsAddress", Dns1 }, { "IpDns2Address", Dns2 }, { "IpInterfaceMetric", "1" } };
         }
 
         // the lines of one [section] (without the header); null = no such section
@@ -72,7 +76,7 @@ namespace HallowVPN
             switch (key)
             {
                 case "IpNameAssign": return want == "2" ? "DNS isn't set to NordVPN's servers yet." : "DNS should be automatic with split tunnelling.";
-                case "IpDnsAddress": case "IpDns2Address": return "A DNS server is " + (string.IsNullOrEmpty(have) ? "missing" : have) + " instead of NordVPN's " + want + ".";
+                case "IpDnsAddress": case "IpDns2Address": return "A DNS server is " + (string.IsNullOrEmpty(have) ? "missing" : have) + " instead of " + DnsFilters.Get(FilterOf()).Who + "'s " + want + ".";
                 case "IpInterfaceMetric": return want == "1" ? "Windows doesn't ask the VPN's DNS first (interface metric " + (have ?? "not set") + ")." : "The interface metric should be automatic with split tunnelling.";
             }
             return key + " is " + (have ?? "missing") + ", not " + want + ".";

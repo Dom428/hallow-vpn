@@ -22,12 +22,12 @@ namespace HallowVPN
         public bool Exiting;
         public static readonly string[][] Pages = {
             new[] { "connect", "Connection", "power-off" }, new[] { "setup", "First-run setup", "list-check" }, new[] { "servers", "Servers", "globe" }, new[] { "split", "Split tunnel", "code-branch" },
-            new[] { "gaming", "Gaming", "gamepad" }, new[] { "auto", "Auto-connect", "wifi" }, new[] { "killswitch", "Kill switch", "shield-halved" }, new[] { "home", "Home (Tailscale)", "house" },
+            new[] { "gaming", "Gaming", "gamepad" }, new[] { "auto", "Auto-connect", "wifi" }, new[] { "killswitch", "Kill switch", "shield-halved" }, new[] { "protection", "Threat protection", "link-slash" }, new[] { "home", "Home (Tailscale)", "house" },
             new[] { "account", "Account", "key" }, new[] { "nordlynx", "NordLynx", "bolt" }, new[] { "fix", "Fix my connection", "stethoscope" }, new[] { "settings", "Settings", "gear" } };
         public static string PageId(string s)
         {
             var v = (s ?? "").Trim().ToLowerInvariant().Replace(" ", "");
-            if (v == "connection" || v == "status") v = "connect"; if (v == "kill" || v == "firewall") v = "killswitch"; if (v == "tailscale") v = "home"; if (v == "wireguard" || v == "protocol" || v == "protocols") v = "nordlynx"; if (v == "game" || v == "games") v = "gaming";
+            if (v == "connection" || v == "status") v = "connect"; if (v == "kill" || v == "firewall") v = "killswitch"; if (v == "threat" || v == "threatprotection" || v == "adblock" || v == "dns" || v == "malware") v = "protection"; if (v == "tailscale") v = "home"; if (v == "wireguard" || v == "protocol" || v == "protocols") v = "nordlynx"; if (v == "game" || v == "games") v = "gaming";
             if (v == "splittunnel" || v == "splittunneling" || v == "splittunnelling") v = "split";
             if (v == "firstrun" || v == "first-runsetup" || v == "wizard" || v == "start") v = "setup";
             if (v == "fixmyconnection" || v == "diagnose" || v == "diagnosis" || v == "checks") v = "fix";
@@ -128,6 +128,7 @@ namespace HallowVPN
                 case "split": el = SplitPage(); break;
                 case "gaming": el = GamingPage(); break;
                 case "killswitch": el = KillSwitchPage(); break;
+                case "protection": el = ThreatPage(); break;   // 1.3
                 case "home": el = HomePage(); break;
                 case "account": el = AccountPage(); break;
                 case "settings": el = SettingsPage(); break;

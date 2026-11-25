@@ -37,7 +37,7 @@ namespace HallowVPN.Tests
             // 1.2.6: the whole run stops itself after 5 minutes (the ship script kills it then too)
             new Thread(() => { Thread.Sleep(TimeSpan.FromMinutes(5)); Console.WriteLine("FAIL the tests took longer than 5 minutes - stopped"); Console.WriteLine(pass + " passed, " + (fail + 1) + " failed"); Environment.Exit(99); }) { IsBackground = true }.Start();
             var appExe = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(typeof(Run).Assembly.Location)), "HallowVPN.exe");
-            try { Parsing(); Targets(); Picking(); Cache(); SplitTests(); Scripts(); AccountTests(); KillSwitchTests(); CaTests(); GameTests(); TailscaleTests(); ModeTests(); Misc(); V11.All(Ok, Dir, Fx); V12.All(Ok, Dir, Fx); RealReadOnly(); PipeAndApp(); V126.All(Ok, Dir, appExe); }
+            try { Parsing(); Targets(); Picking(); Cache(); SplitTests(); Scripts(); AccountTests(); KillSwitchTests(); CaTests(); GameTests(); TailscaleTests(); ModeTests(); Misc(); V11.All(Ok, Dir, Fx); V12.All(Ok, Dir, Fx); RealReadOnly(); PipeAndApp(); V126.All(Ok, Dir, appExe); V13.All(Ok, Fx); }
             catch (Exception e) { fail++; Console.WriteLine("FAIL exception: " + e); }
             try { if (Directory.Exists(Dir)) Directory.Delete(Dir, true); } catch { }
             Console.WriteLine(pass + " passed, " + fail + " failed");
